@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hindi NLP Toolkit — Word-Order Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #faf6ee;
+    --paper-deep: #f2ecdf;
+    --ink: #211d16;
+    --ink-soft: #6b6253;
+    --line: #d9d0bd;
+    --vermilion: #c2491d;
+    --vermilion-deep: #9c3713;
+    --green: #3d7a4a;
+    --mono: "IBM Plex Mono", monospace;
+    --sans: "IBM Plex Sans", "Noto Sans Devanagari", sans-serif;
+    --display: "Fraunces", "Noto Sans Devanagari", serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--paper);
+    background-image: radial-gradient(var(--line) 0.7px, transparent 0.7px);
+    background-size: 26px 26px;
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 0 1.25rem 4rem;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; }
+
+  /* ── Header ─────────────────────────────────────────── */
+  header {
+    padding: 2.6rem 0 1.6rem;
+    border-bottom: 2px solid var(--ink);
+    display: flex; align-items: flex-end; justify-content: space-between;
+    flex-wrap: wrap; gap: 0.8rem;
+    animation: rise 0.5s ease both;
+  }
+  .devanagari-mark {
+    font-family: var(--display);
+    color: var(--vermilion);
+    font-size: 0.95rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(1.9rem, 4.5vw, 2.8rem);
+    line-height: 1.05;
+  }
+  h1 em { font-style: italic; color: var(--vermilion); }
+  .pipeline-trail {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    text-align: right;
+  }
+  .pipeline-trail b { color: var(--vermilion); font-weight: 500; }
+
+  /* ── Layout ─────────────────────────────────────────── */
+  main {
+    display: grid;
+    grid-template-columns: minmax(300px, 380px) 1fr;
+    gap: 1.4rem;
+    margin-top: 1.6rem;
+    align-items: start;
+  }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+
+  .card {
+    background: #fffdf8;
+    border: 1.5px solid var(--ink);
+    box-shadow: 5px 5px 0 var(--paper-deep), 5px 5px 0 1.5px var(--line);
+    padding: 1.4rem;
+    animation: rise 0.5s ease both;
+  }
+  .card + .card { margin-top: 1.4rem; }
+  .card h2 {
+    font-family: var(--display);
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    display: flex; align-items: baseline; gap: 0.5rem;
+  }
+  .card h2 .num {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--vermilion);
+    border: 1px solid var(--vermilion);
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+  }
+
+  /* ── Form ───────────────────────────────────────────── */
+  .dropzone {
+    border: 1.5px dashed var(--ink-soft);
+    background: var(--paper);
+    padding: 1.5rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    margin-bottom: 1.1rem;
+  }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--vermilion); background: #fdf3ec; }
+  .dropzone .big { font-family: var(--display); font-size: 1.02rem; }
+  .dropzone .hint { font-size: 0.78rem; color: var(--ink-soft); margin-top: 0.3rem; }
+  .dropzone .picked {
+    font-family: var(--mono); font-size: 0.8rem; color: var(--vermilion-deep);
+    margin-top: 0.5rem; word-break: break-all;
+  }
+  input[type="file"] { display: none; }
+
+  .opt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 1rem; }
+  label.field { display: block; font-size: 0.78rem; font-weight: 600; color: var(--ink-soft); }
+  label.field span { display: block; margin-bottom: 0.3rem; letter-spacing: 0.04em; text-transform: uppercase; font-size: 0.68rem; }
+  input[type="number"], select {
+    width: 100%;
+    font-family: var(--mono); font-size: 0.88rem;
+    padding: 0.45rem 0.5rem;
+    border: 1.5px solid var(--line); background: var(--paper); color: var(--ink);
+  }
+  input[type="number"]:focus, select:focus { outline: 2px solid var(--vermilion); outline-offset: -1px; }
+
+  fieldset.scorers { border: 1.5px solid var(--line); padding: 0.7rem 0.8rem 0.8rem; margin-bottom: 1.1rem; }
+  fieldset.scorers legend { font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); padding: 0 0.35rem; }
+  .scorer-row { display: flex; gap: 0.55rem; align-items: flex-start; font-size: 0.82rem; padding: 0.25rem 0; }
+  .scorer-row input { accent-color: var(--vermilion); margin-top: 0.2rem; }
+  .scorer-row .desc { color: var(--ink-soft); font-size: 0.74rem; display: block; }
+  .scorer-row code { font-family: var(--mono); font-size: 0.8rem; }
+  .scorers .none { font-size: 0.78rem; color: var(--ink-soft); }
+
+  button.go {
+    width: 100%;
+    font-family: var(--display); font-weight: 600; font-size: 1.05rem;
+    background: var(--ink); color: var(--paper);
+    border: 1.5px solid var(--ink);
+    padding: 0.7rem;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  button.go:hover:not(:disabled) { background: var(--vermilion-deep); border-color: var(--vermilion-deep); }
+  button.go:active:not(:disabled) { transform: translate(2px, 2px); }
+  button.go:disabled { opacity: 0.45; cursor: not-allowed; }
+  .form-error { color: var(--vermilion-deep); font-size: 0.8rem; margin-top: 0.6rem; min-height: 1.1em; }
+
+  /* ── Stages ─────────────────────────────────────────── */
+  .stage { border-left: 3px solid var(--line); padding: 0.15rem 0 0.9rem 1rem; margin-left: 0.45rem; position: relative; }
+  .stage:last-child { padding-bottom: 0.1rem; }
+  .stage::before {
+    content: ""; position: absolute; left: -8.5px; top: 0.28rem;
+    width: 11px; height: 11px; border-radius: 999px;
+    background: var(--paper); border: 2.5px solid var(--line);
+    transition: all 0.2s;
+  }
+  .stage.running::before { border-color: var(--vermilion); background: var(--vermilion); animation: pulse 1.1s ease infinite; }
+  .stage.done { border-left-color: var(--green); }
+  .stage.done::before { border-color: var(--green); background: var(--green); }
+  .stage.failed::before { border-color: var(--vermilion-deep); background: var(--vermilion-deep); }
+  .stage-name { font-family: var(--display); font-weight: 600; font-size: 0.98rem; }
+  .stage-state { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-soft); margin-left: 0.45rem; }
+  .stage.running .stage-state { color: var(--vermilion); }
+  .stage.done .stage-state { color: var(--green); }
+
+  .downloads { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.5rem; }
+  a.dl {
+    font-family: var(--mono); font-size: 0.74rem;
+    text-decoration: none; color: var(--ink);
+    border: 1.5px solid var(--ink);
+    background: var(--paper);
+    padding: 0.32rem 0.6rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    transition: background 0.12s, color 0.12s;
+    animation: rise 0.3s ease both;
+  }
+  a.dl:hover { background: var(--vermilion); border-color: var(--vermilion); color: #fff; }
+  a.dl::before { content: "↓"; font-weight: 700; }
+
+  .idle-note, .error-note { font-size: 0.85rem; color: var(--ink-soft); }
+  .error-note { color: var(--vermilion-deep); font-family: var(--mono); font-size: 0.78rem; white-space: pre-wrap; }
+
+  /* ── Summary ────────────────────────────────────────── */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.7rem; margin-bottom: 1.1rem; }
+  .stat { border: 1.5px solid var(--line); background: var(--paper); padding: 0.6rem 0.7rem; }
+  .stat .v { font-family: var(--display); font-size: 1.45rem; font-weight: 700; }
+  .stat .k { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); margin-top: 0.1rem; }
+  .stat.accent .v { color: var(--vermilion); }
+  table.filters { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  table.filters th, table.filters td { text-align: left; padding: 0.42rem 0.5rem; border-bottom: 1px solid var(--line); }
+  table.filters th { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+  table.filters td.n { font-family: var(--mono); text-align: right; }
+  .bar { height: 5px; background: var(--paper-deep); margin-top: 3px; }
+  .bar i { display: block; height: 100%; background: var(--vermilion); }
+
+  footer { margin-top: 2.6rem; font-family: var(--mono); font-size: 0.7rem; color: var(--ink-soft); text-align: center; }
+  footer a { color: var(--vermilion-deep); }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(194,73,29,0.45); } 50% { box-shadow: 0 0 0 6px rgba(194,73,29,0); } }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="devanagari-mark">वाक्य · क्रम · विश्लेषण</div>
+      <h1>Hindi Word-Order <em>Pipeline</em></h1>
+    </div>
+    <div class="pipeline-trail">upload → <b>parse</b> → <b>filter</b> → <b>variants</b> → download</div>
+  </header>
+
+  <main>
+    <!-- ── Left: form ── -->
+    <section class="card" style="animation-delay:0.05s">
+      <h2><span class="num">01</span> Corpus &amp; options</h2>
+      <form id="job-form">
+        <div class="dropzone" id="dropzone">
+          <div class="big">Drop a file here, or click to browse</div>
+          <div class="hint">.conllu (parsed treebank) or .txt (one Hindi sentence per line, parsed with Stanza)</div>
+          <div class="picked" id="picked-name"></div>
+          <input type="file" id="file-input" accept=".conllu,.txt">
+        </div>
+
+        <div class="opt-grid">
+          <label class="field"><span>Min preverbal phrases</span>
+            <input type="number" name="min_phrases" value="2" min="1" max="10">
+          </label>
+          <label class="field"><span>Max variants / sentence</span>
+            <input type="number" name="max_variants" value="99" min="1" max="500">
+          </label>
+          <label class="field" style="grid-column: 1 / -1;"><span>Annotation scheme</span>
+            <select name="root_pos">
+              <option value="paninian">Paninian (k1/k2, VM/VAUX) — for ISCNLP-style .conllu</option>
+              <option value="ud">UD (nsubj/obj, copular NOUN/ADJ roots) — for UD .conllu or parsed .txt</option>
+            </select>
+            <span class="desc">Drives root-POS handling and scheme-aware scorers (e.g. Information Status). Raw / .txt input is parsed by Stanza as UD, so pick UD for those; Paninian applies to pre-annotated Paninian .conllu.</span>
+          </label>
+          <label class="scorer-row" style="grid-column: 1 / -1;">
+            <input type="checkbox" id="grammar-filter" checked>
+            <span><code>grammar filter</code>
+              <span class="desc">Keep only reorderings whose adjacent deprel pairs occur in the uploaded
+              corpus. Uncheck for small uploads (&lt; ~100 sentences), where the observed
+              pairs are too sparse to allow any reordering.</span></span>
+          </label>
+        </div>
+
+        <fieldset class="scorers">
+          <legend>Pair scorers</legend>
+          <div id="scorer-list"><span class="none">Loading…</span></div>
+        </fieldset>
+
+        <button type="submit" class="go" id="submit-btn" disabled>Run pipeline</button>
+        <div class="form-error" id="form-error"></div>
+      </form>
+    </section>
+
+    <!-- ── Right: results ── -->
+    <section>
+      <div class="card" style="animation-delay:0.12s">
+        <h2><span class="num">02</span> Pipeline progress</h2>
+        <p class="idle-note" id="idle-note">Waiting for a corpus — results appear here stage by stage, and every file is downloadable as soon as its stage finishes.</p>
+        <div id="stages" class="hidden">
+          <div class="stage" data-stage="parse">
+            <span class="stage-name">Parse</span><span class="stage-state">pending</span>
+            <div class="downloads"></div>
+          </div>
+          <div class="stage" data-stage="filter">
+            <span class="stage-name">Filter</span><span class="stage-state">pending</span>
+            <div class="downloads"></div>
+          </div>
+          <div class="stage" data-stage="variants">
+            <span class="stage-name">Variants &amp; scores</span><span class="stage-state">pending</span>
+            <div class="downloads"></div>
+          </div>
+        </div>
+        <p class="error-note hidden" id="error-note"></p>
+      </div>
+
+      <div class="card hidden" id="summary-card" style="animation-delay:0.18s">
+        <h2><span class="num">03</span> Filter summary</h2>
+        <div class="stats" id="stats"></div>
+        <table class="filters">
+          <thead><tr><th>Filter</th><th style="text-align:right">Rejected</th><th style="width:38%"></th></tr></thead>
+          <tbody id="filter-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    HindiNLPToolKit · dependency-length research · API docs at <a href="/docs">/docs</a>
+  </footer>
+</div>
+
+<script>
+const ARTIFACT_STAGE = {
+  "parsed.conllu": "parse",
+  "passed_sentences.csv": "filter",
+  "rejected_sentences.csv": "filter",
+  "summary.json": "filter",
+  "variants.csv": "variants",
+};
+const ARTIFACT_LABEL = {
+  "parsed.conllu": "parsed.conllu",
+  "passed_sentences.csv": "passed.csv",
+  "rejected_sentences.csv": "rejected.csv",
+  "summary.json": "summary.json",
+  "variants.csv": "variants.csv",
+};
+const STAGE_ORDER = ["parse", "filter", "variants"];
+
+const fileInput = document.getElementById("file-input");
+const dropzone = document.getElementById("dropzone");
+const pickedName = document.getElementById("picked-name");
+const submitBtn = document.getElementById("submit-btn");
+const formError = document.getElementById("form-error");
+let pollTimer = null;
+
+// ── Scorer checkboxes from the plugin registry ──────────────
+fetch("/api/plugins").then(r => r.json()).then(plugins => {
+  const box = document.getElementById("scorer-list");
+  if (!plugins.length) {
+    box.innerHTML = '<span class="none">No scorer plugins found — add one in scoring/.</span>';
+    return;
+  }
+  box.innerHTML = "";
+  for (const p of plugins) {
+    const row = document.createElement("label");
+    row.className = "scorer-row";
+    row.innerHTML = `<input type="checkbox" value="${p.name}">
+      <span><code>${p.name}</code><span class="desc">${p.description}</span></span>`;
+    box.appendChild(row);
+  }
+}).catch(() => {
+  document.getElementById("scorer-list").innerHTML =
+    '<span class="none">Could not load plugins.</span>';
+});
+
+// ── File picking ────────────────────────────────────────────
+dropzone.addEventListener("click", () => fileInput.click());
+dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
+dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+dropzone.addEventListener("drop", e => {
+  e.preventDefault();
+  dropzone.classList.remove("dragover");
+  if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; onFilePicked(); }
+});
+fileInput.addEventListener("change", onFilePicked);
+
+function onFilePicked() {
+  const f = fileInput.files[0];
+  if (!f) return;
+  pickedName.textContent = `${f.name} · ${(f.size / 1024).toFixed(1)} KB`;
+  submitBtn.disabled = false;
+  formError.textContent = "";
+}
+
+// ── Submit ──────────────────────────────────────────────────
+document.getElementById("job-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = fileInput.files[0];
+  if (!f) return;
+
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("min_phrases", e.target.min_phrases.value);
+  fd.append("max_variants", e.target.max_variants.value);
+  fd.append("root_pos", e.target.root_pos.value);
+  fd.append("grammar_filter", document.getElementById("grammar-filter").checked);
+  const checked = [...document.querySelectorAll("#scorer-list input:checked")].map(c => c.value);
+  fd.append("scorers", checked.join(","));
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Uploading…";
+  formError.textContent = "";
+  resetResults();
+
+  try {
+    const res = await fetch("/api/jobs", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    startPolling(data.job_id);
+  } catch (err) {
+    formError.textContent = err.message;
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Run pipeline";
+  }
+});
+
+// ── Polling & rendering ─────────────────────────────────────
+function resetResults() {
+  clearInterval(pollTimer);
+  document.getElementById("idle-note").classList.add("hidden");
+  document.getElementById("stages").classList.remove("hidden");
+  document.getElementById("error-note").classList.add("hidden");
+  document.getElementById("summary-card").classList.add("hidden");
+  for (const el of document.querySelectorAll(".stage")) {
+    el.className = "stage";
+    el.querySelector(".stage-state").textContent = "pending";
+    el.querySelector(".downloads").innerHTML = "";
+  }
+}
+
+function startPolling(jobId) {
+  submitBtn.textContent = "Running…";
+  const tick = async () => {
+    let job;
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`);
+      if (!res.ok) throw new Error("job lost");
+      job = await res.json();
+    } catch {
+      clearInterval(pollTimer);
+      showError("Lost contact with the job. Reload and try again.");
+      return;
+    }
+    render(job, jobId);
+    if (job.status === "done" || job.status === "failed") {
+      clearInterval(pollTimer);
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Run pipeline";
+      if (job.status === "failed") showError(job.error);
+    }
+  };
+  tick();
+  pollTimer = setInterval(tick, 1500);
+}
+
+function render(job, jobId) {
+  const currentIdx = STAGE_ORDER.indexOf(job.stage);
+  for (const el of document.querySelectorAll(".stage")) {
+    const name = el.dataset.stage;
+    const idx = STAGE_ORDER.indexOf(name);
+    const state = el.querySelector(".stage-state");
+    el.classList.remove("running", "done", "failed");
+    if (job.status === "queued") {
+      state.textContent = "queued";
+    } else if (job.stage === "complete" || job.status === "done" || idx < currentIdx) {
+      el.classList.add("done"); state.textContent = "done";
+    } else if (idx === currentIdx) {
+      if (job.status === "failed") { el.classList.add("failed"); state.textContent = "failed"; }
+      else { el.classList.add("running"); state.textContent = "running…"; }
+    } else {
+      state.textContent = "pending";
+    }
+  }
+
+  // Download chips appear the moment an artifact is registered.
+  for (const name of job.artifacts) {
+    const stage = ARTIFACT_STAGE[name] || "variants";
+    const holder = document.querySelector(`.stage[data-stage="${stage}"] .downloads`);
+    if (!holder || holder.querySelector(`[data-file="${name}"]`)) continue;
+    const a = document.createElement("a");
+    a.className = "dl";
+    a.dataset.file = name;
+    a.href = `/api/jobs/${jobId}/files/${name}`;
+    a.textContent = ARTIFACT_LABEL[name] || name;
+    holder.appendChild(a);
+  }
+
+  if (job.summary) renderSummary(job.summary);
+}
+
+function renderSummary(s) {
+  document.getElementById("summary-card").classList.remove("hidden");
+  const stats = document.getElementById("stats");
+  stats.innerHTML = "";
+  const items = [
+    [s.total_input, "input"],
+    [s.total_passed, "passed", true],
+    [s.total_rejected, "rejected"],
+    [(s.pass_rate * 100).toFixed(1) + "%", "pass rate", true],
+    [s.avg_phrase_count, "avg phrases"],
+  ];
+  for (const [v, k, accent] of items) {
+    const d = document.createElement("div");
+    d.className = "stat" + (accent ? " accent" : "");
+    d.innerHTML = `<div class="v">${v}</div><div class="k">${k}</div>`;
+    stats.appendChild(d);
+  }
+  const tbody = document.getElementById("filter-rows");
+  tbody.innerHTML = "";
+  const max = Math.max(1, ...s.filter_order.map(f => f.rejected));
+  for (const f of s.filter_order) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${f.filter}</td><td class="n">${f.rejected}</td>
+      <td><div class="bar"><i style="width:${(f.rejected / max) * 100}%"></i></div></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function showError(msg) {
+  const note = document.getElementById("error-note");
+  note.textContent = msg;
+  note.classList.remove("hidden");
+}
+</script>
+</body>
+</html>

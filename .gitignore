@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+
+# Claude / agent tooling
+.claude/
+CLAUDE.md
+
+# Local-only: research notebook, tests, sample sentences
+MTP_pipeline.ipynb
+test_all.py
+test_folder/
+test_sentences.txt
+
+# Large corpus (kept local; HDTB corpus is committed)
+fact_media_news_ISCNLP.conllu
+
+# Web app runtime artifacts
+webapp/outputs/
