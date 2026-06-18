@@ -43,6 +43,10 @@ RUN ROOT=/app/taru && \
     done
 
 # --- python deps ---
+# Install CPU-only torch FIRST so stanza's torch dependency is already satisfied
+# and pip does not pull the multi-GB NVIDIA CUDA stack (cuBLAS/cuDNN/cuFFT/...).
+# This container has no GPU; CPU torch keeps the image ~10 GB smaller.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
 # writable scratch dirs used at runtime
