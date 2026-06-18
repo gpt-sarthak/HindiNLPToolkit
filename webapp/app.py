@@ -130,6 +130,8 @@ def download_artifact(job_id: str, filename: str) -> FileResponse:
 
 
 # Static frontend — mounted last so /api/* keeps priority.
+from webapp.taru_routes import router as taru_router
+app.include_router(taru_router)
 app.mount(
     "/",
     StaticFiles(directory=Path(__file__).resolve().parent / "static", html=True),

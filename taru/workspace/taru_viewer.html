@@ -1,0 +1,377 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hindi Parser · Tree &amp; Surprisal Toolkit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{--paper:#f4efe4;--panel:#fffdf7;--ink:#211d17;--soft:#6f6557;--line:#ddd3bf;--rust:#b5462f;--teal:#27645f}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(120% 80% at 80% -10%,#fbf7ec,transparent 55%),var(--paper);
+    color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.45;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:980px;margin:0 auto;padding:34px 22px 90px}
+  h1{font-family:"Fraunces",serif;font-weight:500;font-size:36px;margin:0 0 4px}
+  h1 .dev{font-family:"Noto Sans Devanagari",serif;color:var(--rust)}
+  .byline{margin:6px 0 0;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--teal);font-weight:600}
+  .sub{color:var(--soft);font-size:14.5px;margin:4px 0 20px}
+  code{font-family:"IBM Plex Mono";background:#efe9da;padding:1px 6px;border-radius:5px;font-size:.92em}
+
+  .tabs{display:inline-flex;background:#efe9da;border-radius:12px;padding:4px;gap:4px;margin-bottom:16px}
+  .tabs button{border:0;background:transparent;padding:9px 22px;border-radius:9px;cursor:pointer;
+    font-family:"IBM Plex Sans";font-size:14.5px;font-weight:600;color:var(--soft)}
+  .tabs button.active{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+
+  .ask{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;
+    box-shadow:0 10px 30px -18px rgba(33,29,23,.35)}
+  label.fld{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);display:block;margin-bottom:8px}
+  textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:11px;background:#fff;padding:13px 15px;
+    font-family:"Noto Sans Devanagari",serif;font-size:18px;color:var(--ink);resize:vertical;line-height:1.7}
+  input[type=text].lat{font-family:"IBM Plex Mono",monospace;font-size:14px}
+  textarea:focus,input:focus,select:focus{outline:2px solid var(--teal);outline-offset:-1px;border-color:transparent}
+  select{border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;
+    font-family:"IBM Plex Sans";font-size:14px;color:var(--ink);max-width:100%}
+  .controls{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  .ctl{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--soft);font-weight:600}
+  .switch{position:relative;width:40px;height:22px;flex:0 0 auto}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;background:#d9d0bd;border-radius:999px;transition:.18s;cursor:pointer}
+  .slider:before{content:"";position:absolute;height:16px;width:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.18s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+  .switch input:checked + .slider{background:var(--teal)}
+  .switch input:checked + .slider:before{transform:translateX(18px)}
+  .btn{border:0;cursor:pointer;border-radius:11px;background:var(--rust);color:#fff;font-weight:600;font-size:15px;padding:12px 28px}
+  .btn:hover{filter:brightness(1.06)} .btn:active{transform:translateY(1px)} .btn:disabled{opacity:.6;cursor:wait}
+  .btn2{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:10px;padding:9px 16px;font-weight:600;font-size:13.5px;cursor:pointer}
+  .btn2:hover{background:#faf6ec}
+  .hint{color:var(--soft);font-size:12.5px}
+  .err{color:var(--rust);font-family:"IBM Plex Mono",monospace;font-size:13px;margin-top:12px;white-space:pre-wrap}
+
+  #out{margin-top:8px}
+  .result{margin-top:26px}
+  .rhead{display:flex;align-items:baseline;gap:12px;margin:0 0 14px;flex-wrap:wrap}
+  .rhead .num{font-family:"IBM Plex Mono";font-size:12px;font-weight:600;color:#fff;background:var(--teal);border-radius:999px;padding:3px 10px}
+  .rhead .said{font-family:"Noto Sans Devanagari",serif;font-size:22px;font-weight:500}
+  .rhead .mdl{font-family:"IBM Plex Mono";font-size:11px;color:var(--soft);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
+  .sec{margin-bottom:18px}
+  .sec h2{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--soft);margin:0 0 9px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .svgwrap{overflow:auto;padding:16px 12px 20px}
+  svg{display:block}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{text-align:left;padding:9px 16px;border-bottom:1px solid var(--line)}
+  th{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);background:#faf6ea}
+  td.word{font-family:"Noto Sans Devanagari",serif;font-size:18px}
+  td.val{text-align:right;width:120px}
+  .chip{display:inline-block;min-width:62px;text-align:center;padding:3px 9px;border-radius:999px;font-family:"IBM Plex Mono";font-size:13px;font-weight:600}
+  tr:last-child td{border-bottom:0}
+  pre.tree{margin:0;padding:14px 18px;font-family:"IBM Plex Mono",monospace;font-size:13.5px;color:var(--ink);
+    white-space:pre-wrap;word-break:break-word;line-height:1.6}
+  .miniwrap{display:flex;gap:8px;margin-left:auto}
+  .mini{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;font-size:11.5px;cursor:pointer;color:var(--ink);font-weight:600}
+  .mini:hover{background:#faf6ec}
+  .empty{color:var(--soft);font-size:14px;padding:24px 0;font-style:italic}
+  hr.div{border:0;border-top:1px solid var(--line);margin:30px 0 0}
+
+  .steps{font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.9;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-top:14px;max-height:220px;overflow:auto}
+  .steps .ok:before{content:"✓ ";color:var(--teal);font-weight:700}
+  .steps .run:before{content:"… ";color:var(--rust);font-weight:700}
+  .done-card{margin-top:16px;border:1px solid var(--teal);background:#f2f7f6;border-radius:12px;padding:16px}
+  .done-card b{color:var(--teal)}
+  .foot{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);color:var(--soft);font-size:12.5px;text-align:center}
+  .foot b{color:var(--ink)}
+  .note{font-size:12.5px;color:var(--soft);background:#fbf7ec;border:1px dashed var(--line);border-radius:10px;padding:10px 14px;margin-top:14px}
+</style>
+
+<div class="wrap">
+  <h1><span class="dev">तरु</span> — Hindi Tree &amp; Surprisal Toolkit</h1>
+  <p class="byline">Muraliedhar Kanchibhotla · Indian Institute of Technology Jodhpur</p>
+  <p class="sub">Parse Hindi with the built-in HDTB model or a model you train on your own corpus.</p>
+
+  <div class="tabs" id="tabs">
+    <button class="active" data-tab="parse">Parse / Test</button>
+    <button data-tab="train">Train a model</button>
+  </div>
+
+  <!-- ================= PARSE TAB ================= -->
+  <div id="tab-parse">
+    <div class="ask">
+      <label class="fld" for="sentence" id="parse-label">Input — one sentence per line</label>
+      <textarea id="sentence" rows="3">मेरा नाम मुरलीधर कांचीभोटला है ।</textarea>
+      <div class="controls">
+        <span class="ctl">Input
+          <select id="parse-input">
+            <option value="sentence">Sentences</option>
+            <option value="dependency">Dependency trees (CoNLL-U)</option>
+          </select>
+        </span>
+        <span class="ctl">Model
+          <select id="model-sel"><option value="hdtb">HDTB (default)</option></select>
+        </span>
+        <span class="ctl">Surprisal
+          <label class="switch"><input type="checkbox" id="want-surp" checked><span class="slider"></span></label>
+        </span>
+        <button class="btn" id="go">Parse</button>
+        <span class="hint">⌘/Ctrl + Enter parses. Turn surprisal off for tree-only (faster).</span>
+      </div>
+      <div class="err" id="perr"></div>
+    </div>
+    <div id="out"></div>
+  </div>
+
+  <!-- ================= TRAIN TAB ================= -->
+  <div id="tab-train" style="display:none">
+    <div class="ask">
+      <label class="fld" id="train-label">Training corpus — raw Hindi sentences, one per line (paste or upload .txt)</label>
+      <textarea id="train-text" rows="6" placeholder="मेरा नाम मुरलीधर कांचीभोटला है ।&#10;बेहद खूबसूरत पूरी इमारत है ।&#10;..."></textarea>
+      <div class="controls">
+        <span class="ctl">Input
+          <select id="train-input">
+            <option value="sentence">Sentences</option>
+            <option value="dependency">Dependency trees (CoNLL-U)</option>
+          </select>
+        </span>
+        <input type="file" id="train-file" accept=".txt,.conllu" style="font-size:13px">
+        <input type="text" class="lat" id="train-name" placeholder="model name e.g. tourism_corpus" style="max-width:240px">
+        <button class="btn" id="train-go">Train model</button>
+      </div>
+      <div class="note" id="train-note">
+        <b>From sentences:</b> your sentences are parsed with the base HDTB model to generate a
+        <b>.linetrees</b> training set (silver trees), a fresh Berkeley grammar is trained on
+        them, and converted into a synproc surprisal model.
+        <b>From dependency trees:</b> the CoNLL-U is converted directly into gold constituency
+        linetrees and trained the same way (higher quality, since trees are annotated, not predicted).
+        You get the <b>model + the generated training dataset</b> to download, and the model
+        becomes selectable in the Parse tab. Custom models live until the Space restarts — download to keep.
+      </div>
+      <div class="err" id="terr"></div>
+      <div class="steps" id="tlog" style="display:none"></div>
+      <div class="done-card" id="tdone" style="display:none"></div>
+    </div>
+  </div>
+
+  <div class="foot">Built by <b>Muraliedhar Kanchibhotla</b>, Indian Institute of Technology Jodhpur</div>
+</div>
+
+<script>
+const FIXED_MAX=22;
+const $=id=>document.getElementById(id);
+const API=(location.protocol==='file:')?'http://localhost:8001/taru':(location.pathname.replace(/\/+$/,'').endsWith('/taru')?'/taru':'');
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('active',x===b));
+  $('tab-parse').style.display=b.dataset.tab==='parse'?'block':'none';
+  $('tab-train').style.display=b.dataset.tab==='train'?'block':'none';
+});
+
+/* ---------- model list ---------- */
+async function refreshModels(selectId){
+  try{
+    const r=await fetch(API+'/models');const m=await r.json();
+    const sel=$('model-sel');const cur=sel.value;sel.innerHTML='';
+    for(const [id,info] of Object.entries(m)){
+      const o=document.createElement('option');o.value=id;o.textContent=info.label||id;sel.appendChild(o);
+    }
+    sel.value=(selectId&&m[selectId])?selectId:(m[cur]?cur:'hdtb');
+  }catch(e){/* offline: keep default */}
+}
+refreshModels();
+
+/* ---------- bracketed tree parsing + svg (same renderer as before) ---------- */
+function parseTree(str){
+  const s=str.trim();let i=0;const ws=c=>/\s/.test(c);
+  const skip=()=>{while(i<s.length&&ws(s[i]))i++};
+  function node(){skip();if(s[i]!=='(')throw new Error("Expected '(' at "+i);i++;skip();
+    let label='';while(i<s.length&&!ws(s[i])&&s[i]!=='('&&s[i]!==')')label+=s[i++];
+    const n={label,children:[],word:null};skip();
+    while(i<s.length&&s[i]!==')'){
+      if(s[i]==='(')n.children.push(node());
+      else{let w='';while(i<s.length&&!ws(s[i])&&s[i]!=='('&&s[i]!==')')w+=s[i++];n.word=n.word?n.word+' '+w:w}
+      skip();}
+    if(s[i]!==')')throw new Error("Expected ')' near "+i);i++;return n;}
+  return node();
+}
+const isPre=n=>n.children.length===0&&n.word!==null;
+const mctx=document.createElement('canvas').getContext('2d');
+const measure=(t,f)=>{mctx.font=f;return mctx.measureText(t).width};
+const STOPS=[[26,152,80],[145,207,96],[254,224,139],[252,141,89],[215,48,39]];
+function heat(t){t=Math.max(0,Math.min(1,t));const seg=(STOPS.length-1)*t,i=Math.min(STOPS.length-2,Math.floor(seg)),f=seg-i;
+  const a=STOPS[i],b=STOPS[i+1];const r=Math.round(a[0]+(b[0]-a[0])*f),g=Math.round(a[1]+(b[1]-a[1])*f),bl=Math.round(a[2]+(b[2]-a[2])*f);
+  return{rgb:`rgb(${r},${g},${bl})`,lum:(0.299*r+0.587*g+0.114*bl)/255};}
+function buildSVG(root,surp){
+  const LAB='600 15px "IBM Plex Mono",monospace',WD='500 19px "Noto Sans Devanagari",serif',SP='600 11px "IBM Plex Mono",monospace';
+  const LEVEL=60,WGAP=40,SGAP=surp?22:6,PAD=14,MX=22,MY=26;
+  let maxD=0;
+  (function w(n,d){maxD=Math.max(maxD,d);
+    if(isPre(n)){const a=measure(n.label,LAB),b=measure(n.word,WD),c=surp&&surp[n.word]!=null?measure((+surp[n.word]).toFixed(2),SP)+12:0;
+      n.width=Math.max(a,b,c)+PAD*2;}
+    else{let s=0;for(const ch of n.children)s+=w(ch,d+1);n.width=Math.max(s,measure(n.label,LAB)+PAD*2);}return n.width;})(root,0);
+  (function p(n,left,d){n.y=MY+d*LEVEL;
+    if(isPre(n))n.x=left+n.width/2;
+    else{const tot=n.children.reduce((a,c)=>a+c.width,0);let cur=left+Math.max(0,(n.width-tot)/2);
+      for(const ch of n.children){p(ch,cur,d+1);cur+=ch.width;}n.x=(n.children[0].x+n.children[n.children.length-1].x)/2;}})(root,0,0);
+  const W=root.width+MX*2,H=MY+maxD*LEVEL+WGAP+SGAP+MY;
+  const NS="http://www.w3.org/2000/svg";const svg=document.createElementNS(NS,"svg");
+  svg.setAttribute("xmlns",NS);svg.setAttribute("viewBox",`0 0 ${W} ${H}`);svg.setAttribute("width",W);svg.setAttribute("height",H);
+  const st=document.createElementNS(NS,"style");
+  st.textContent='.nt{font-family:"IBM Plex Mono",monospace;font-weight:600;fill:#211d17}.pos{font-family:"IBM Plex Mono",monospace;font-weight:600;fill:#27645f}.wd{font-family:"Noto Sans Devanagari",serif;font-weight:500}.sp{font-family:"IBM Plex Mono",monospace;font-weight:600}.edge{stroke:#b9ad96;stroke-width:1.4;fill:none}';
+  svg.appendChild(st);
+  const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const txt=(x,y,c,s)=>{const t=el("text",{x:x+MX,y,"text-anchor":"middle",class:c});t.textContent=s;return t;};
+  (function draw(n){
+    svg.appendChild(txt(n.x,n.y,isPre(n)?"pos":"nt",n.label));
+    if(isPre(n)){
+      const wy=n.y+WGAP;svg.appendChild(el("line",{x1:n.x+MX,y1:n.y+6,x2:n.x+MX,y2:wy-15,class:"edge"}));
+      const sv=surp?surp[n.word]:null;
+      if(sv!=null){const c=heat(sv/FIXED_MAX),ww=measure(n.word,WD),rw=ww+16;
+        svg.appendChild(el("rect",{x:n.x+MX-rw/2,y:wy-19,width:rw,height:26,rx:7,fill:c.rgb,"fill-opacity":.9}));
+        const wt=txt(n.x,wy,"wd",n.word);wt.setAttribute("fill",c.lum<0.55?"#fff":"#211d17");svg.appendChild(wt);
+        const s2=txt(n.x,wy+SGAP,"sp",(+sv).toFixed(2));s2.setAttribute("fill",c.rgb);svg.appendChild(s2);
+      }else{const w2=txt(n.x,wy,"wd",n.word);w2.setAttribute("fill","#211d17");svg.appendChild(w2);}
+    }else for(const ch of n.children){svg.appendChild(el("line",{x1:n.x+MX,y1:n.y+6,x2:ch.x+MX,y2:ch.y-15,class:"edge"}));draw(ch);}
+  })(root);
+  return svg;
+}
+
+/* ---------- parse-result rendering ---------- */
+function resultBlock(item,index,total){
+  const wrap=document.createElement('div');wrap.className='result';
+  const numLabel=total>1?`<span class="num">${index+1}</span>`:'';
+  wrap.innerHTML=`<div class="rhead">${numLabel}<span class="said">${item.sentence||'—'}</span><span class="mdl">model: ${item.model||'hdtb'}</span></div>`;
+  const hasSurp=item.surprisal&&Object.keys(item.surprisal).length;
+
+  const s1=document.createElement('div');s1.className='sec';
+  s1.innerHTML='<h2>Tree diagram<span class="miniwrap"></span></h2>';
+  const box1=document.createElement('div');box1.className='box';
+  const sw=document.createElement('div');sw.className='svgwrap';
+  let svgEl=null;
+  try{svgEl=buildSVG(parseTree(item.tree),hasSurp?item.surprisal:null);sw.appendChild(svgEl);}
+  catch(e){sw.innerHTML='<div class="err" style="padding:14px">Could not draw tree: '+e.message+'</div>';}
+  box1.appendChild(sw);s1.appendChild(box1);wrap.appendChild(s1);
+  const mw=s1.querySelector('.miniwrap');
+  const dl=document.createElement('button');dl.className='mini';dl.textContent='Download SVG';
+  dl.onclick=()=>{if(!svgEl)return;const xml=new XMLSerializer().serializeToString(svgEl);
+    const blob=new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n'+xml],{type:'image/svg+xml'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='tree_'+(index+1)+'.svg';a.click();};
+  const cp=document.createElement('button');cp.className='mini';cp.textContent='Copy tree';
+  cp.onclick=()=>{navigator.clipboard.writeText(item.tree||'');cp.textContent='Copied';setTimeout(()=>cp.textContent='Copy tree',1200);};
+  mw.append(dl,cp);
+
+  if(hasSurp){
+    const s2=document.createElement('div');s2.className='sec';
+    s2.innerHTML='<h2>Per-word surprisal (bits)</h2>';
+    const box2=document.createElement('div');box2.className='box';
+    let rows='<tr><th>Word</th><th style="text-align:right">Surprisal</th></tr>';
+    const entries=Object.entries(item.surprisal);
+    for(const [w,v] of entries){const c=heat((+v)/FIXED_MAX);
+      rows+=`<tr><td class="word">${w}</td><td class="val"><span class="chip" style="background:${c.rgb};color:${c.lum<0.55?'#fff':'#211d17'}">${(+v).toFixed(2)}</span></td></tr>`;}
+    const tot=entries.reduce((a,[,v])=>a+(+v),0);
+    rows+=`<tr><td class="word" style="font-style:italic;color:var(--soft)">Σ total</td><td class="val" style="font-family:'IBM Plex Mono'">${tot.toFixed(2)}</td></tr>`;
+    box2.innerHTML='<table>'+rows+'</table>';s2.appendChild(box2);wrap.appendChild(s2);
+  }
+
+  const s3=document.createElement('div');s3.className='sec';
+  s3.innerHTML='<h2>Tree (bracketed)</h2>';
+  const box3=document.createElement('div');box3.className='box';
+  const pre=document.createElement('pre');pre.className='tree';pre.textContent=item.tree||'';
+  box3.appendChild(pre);s3.appendChild(box3);wrap.appendChild(s3);
+
+  if(index<total-1){const hr=document.createElement('hr');hr.className='div';wrap.appendChild(hr);}
+  return wrap;
+}
+
+async function doParse(){
+  const itype=$('parse-input').value;
+  const text=$('sentence').value;
+  $('perr').textContent='';
+  if(!text.trim()){$('perr').textContent='Provide some input.';return;}
+  const count = itype==='dependency' ? (text.match(/^\s*1\t/gm)||['']).length
+                                     : text.split('\n').filter(s=>s.trim()).length;
+  const b=$('go');b.disabled=true;b.textContent='Parsing…';
+  $('out').innerHTML=`<div class="empty">Parsing with model “${$('model-sel').value}”…</div>`;
+  try{
+    const r=await fetch(API+'/parse',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sentence:text,model:$('model-sel').value,
+        surprisal:$('want-surp').checked,input_type:itype})});
+    if(!r.ok){const t=await r.text();throw new Error('HTTP '+r.status+' — '+t.slice(0,300));}
+    const j=await r.json();
+    if(j.error)throw new Error(j.error);
+    const items=Array.isArray(j)?j:[j];
+    const out=$('out');out.innerHTML='';
+    items.forEach((it,i)=>out.appendChild(resultBlock(it,i,items.length)));
+  }catch(e){
+    $('out').innerHTML='';$('perr').textContent='Request failed: '+e.message;
+  }finally{b.disabled=false;b.textContent='Parse';}
+}
+$('go').onclick=doParse;
+$('sentence').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();doParse();}});
+
+// switch label/placeholder/font when input type changes
+$('parse-input').onchange=()=>{
+  const dep=$('parse-input').value==='dependency';
+  $('parse-label').textContent=dep?'Input — CoNLL-U dependency tree(s)':'Input — one sentence per line';
+  const ta=$('sentence');
+  ta.style.fontFamily=dep?'"IBM Plex Mono",monospace':'"Noto Sans Devanagari",serif';
+  ta.style.fontSize=dep?'13px':'18px';
+  ta.placeholder=dep?'Paste CoNLL-U (10 tab-separated columns per token, blank line between sentences)':'';
+};
+
+/* ---------- training ---------- */
+$('train-file').addEventListener('change',async e=>{
+  const f=e.target.files[0];if(!f)return;
+  $('train-text').value=await f.text();
+  if(!$('train-name').value)$('train-name').value=f.name.replace(/\.(txt|conllu)$/,'').replace(/[^A-Za-z0-9_-]+/g,'_');
+});
+
+// switch train label/font when input type changes
+$('train-input').onchange=()=>{
+  const dep=$('train-input').value==='dependency';
+  $('train-label').textContent=dep
+    ? 'Training corpus — CoNLL-U dependency trees (paste or upload .conllu/.txt)'
+    : 'Training corpus — raw Hindi sentences, one per line (paste or upload .txt)';
+  const ta=$('train-text');
+  ta.style.fontFamily=dep?'"IBM Plex Mono",monospace':'"Noto Sans Devanagari",serif';
+  ta.style.fontSize=dep?'13px':'18px';
+};
+
+async function doTrain(){
+  const text=$('train-text').value;
+  const itype=$('train-input').value;
+  $('terr').textContent='';$('tdone').style.display='none';
+  const enough = itype==='dependency'
+    ? (text.match(/^\s*1\t/gm)||[]).length>=5
+    : text.split('\n').filter(s=>s.trim()).length>=5;
+  if(!enough){$('terr').textContent='Provide at least 5 '+(itype==='dependency'?'dependency trees.':'sentences.');return;}
+  const b=$('train-go');b.disabled=true;b.textContent='Training…';
+  const log=$('tlog');log.style.display='block';log.innerHTML='<div class="run">Submitting corpus…</div>';
+  try{
+    const r=await fetch(API+'/train',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text,name:$('train-name').value,input_type:itype})});
+    const j=await r.json();
+    if(j.error)throw new Error(j.error);
+    const jobId=j.job_id;
+    while(true){
+      await new Promise(res=>setTimeout(res,2500));
+      const s=await (await fetch(API+'/train/status/'+jobId)).json();
+      log.innerHTML=(s.log||[]).map((m,i,arr)=>`<div class="${i<arr.length-1||s.status!=='running'?'ok':'run'}">${m}</div>`).join('');
+      if(s.status==='done'){
+        const m=s.model;
+        $('tdone').style.display='block';
+        $('tdone').innerHTML=`<b>Model “${m.id}” trained</b> on ${m.n_sentences} trees (${m.source}).<br><br>
+          <a class="btn2" href="${API}/download/${m.id}" download>⬇ Download model + training dataset (zip)</a>
+          &nbsp; <button class="btn2" onclick="document.querySelector('#tabs button[data-tab=parse]').click()">Use it in Parse tab →</button>`;
+        await refreshModels(m.id);
+        break;
+      }
+      if(s.status==='error')throw new Error(s.error||'training failed');
+    }
+  }catch(e){$('terr').textContent='Training failed: '+e.message;}
+  finally{b.disabled=false;b.textContent='Train model';}
+}
+$('train-go').onclick=doTrain;
+
+document.fonts.ready.then(()=>$('sentence').focus());
+</script>
