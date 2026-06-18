@@ -2,3 +2,7 @@
 *.model filter=lfs diff=lfs merge=lfs -text
 *.synprocmodel filter=lfs diff=lfs merge=lfs -text
 *.gr filter=lfs diff=lfs merge=lfs -text
+
+# Force LF on files the Linux Docker build compiles/reads, so Windows checkouts
+# (core.autocrlf=true) don't inject CRLF that breaks g++/shell inside the image.
+taru/config/*.txt text eol=lf
