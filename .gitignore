@@ -20,3 +20,10 @@ fact_media_news_ISCNLP.conllu
 
 # Web app runtime artifacts
 webapp/outputs/
+taru/workspace/genmodel/custom/
+taru/workspace/results/
+**/.DS_Store
+__pycache__/
+*.pyc
+.venv/
+taru/workspace/bin/

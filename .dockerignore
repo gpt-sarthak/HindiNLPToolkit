@@ -1,0 +1,9 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.log
+taru/workspace/results
+taru/workspace/genmodel/custom
+taru/workspace/bin
+**/.DS_Store
