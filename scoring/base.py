@@ -7,7 +7,8 @@ To add your own scorer
 ----------------------
 1. Create a new file in the ``scoring/`` package, e.g. ``scoring/my_scorer.py``.
 2. Subclass :class:`Scorer`, set ``name`` and ``description``, and implement
-   ``score()``.
+   ``score()``.  Optionally set the standardized ``trained_on`` / ``built_with``
+   / ``notes`` fields — they render as bullets in the scorer list.
 3. Done — the web app discovers it automatically and shows it as a checkbox.
    No registration code, no web code.
 
@@ -60,10 +61,27 @@ class Scorer:
     ----------
     name        : unique machine name (used in API requests and the registry).
     description : one-line human description (shown in the web UI).
+
+    Optional standardized metadata (rendered as bullets in the web UI scorer
+    list and surfaced by ``/api/plugins``).  Leave any of them ``""`` to omit
+    that bullet; an empty ``trained_on`` reads as "not trained / deterministic":
+
+    trained_on  : the data the model was trained on.
+    built_with  : the underlying model or method used to build it.
+    notes       : anything else worth stating (smoothing, units, caveats).
+
+    needs_previous_sentence : True if the scorer needs the *preceding* sentence
+        to be meaningful (e.g. adaptation on context, or givenness vs. the prior
+        sentence).  The web app skips such scorers in single-sentence runs when
+        no context sentence is supplied.
     """
 
     name: str = ""
     description: str = ""
+    trained_on: str = ""
+    built_with: str = ""
+    notes: str = ""
+    needs_previous_sentence: bool = False
 
     def score(self, pairs_df: pd.DataFrame) -> pd.DataFrame:
         """
