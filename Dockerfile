@@ -21,9 +21,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY . /app
+
+# --- python deps FIRST (cached across app-source edits) ---
+# Only requirements.txt is copied here, so editing Python/HTML source does NOT
+# invalidate these layers. Install CPU-only torch first so stanza's torch
+# dependency is already satisfied and pip does not pull the multi-GB NVIDIA
+# CUDA stack (cuBLAS/cuDNN/cuFFT/...). This container has no GPU; CPU torch
+# keeps the image ~10 GB smaller.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir -r requirements.txt
 
 # --- compile the Taru C++ engine for Linux ---
+# Only the taru/ tree is needed to build, so copying it on its own keeps this
+# (slow-ish) compile cached unless the C++ sources actually change.
+COPY taru /app/taru
 RUN ROOT=/app/taru && \
     SRC=$ROOT/resource-incrsem/src && \
     mkdir -p $ROOT/workspace/bin && \
@@ -42,12 +54,8 @@ RUN ROOT=/app/taru && \
         echo "$NAME built OK"; \
     done
 
-# --- python deps ---
-# Install CPU-only torch FIRST so stanza's torch dependency is already satisfied
-# and pip does not pull the multi-GB NVIDIA CUDA stack (cuBLAS/cuDNN/cuFFT/...).
-# This container has no GPU; CPU torch keeps the image ~10 GB smaller.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir -r requirements.txt
+# --- application source (the only layer a routine code edit invalidates) ---
+COPY . /app
 
 # writable scratch dirs used at runtime
 RUN mkdir -p taru/workspace/results taru/workspace/genmodel/custom && \

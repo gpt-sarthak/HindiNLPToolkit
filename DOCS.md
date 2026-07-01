@@ -532,17 +532,29 @@ python -m uvicorn webapp.app:app --host 0.0.0.0 --port 8000
 
 Open `http://localhost:8000` (interactive API docs at `/docs`).
 
-- **Input**: one `.conllu` or `.txt` upload (`.txt` = one Hindi sentence per
-  line, parsed with Stanza — the first `.txt` upload downloads the Hindi
-  model, so it is slow once).
-- **Options**: min preverbal phrases, max variants per sentence, annotation
-  scheme preset (Paninian / UD root POS), grammar filter on/off, and which
-  pair scorers to run.
-- **Grammar filter**: when on (default), only reorderings whose adjacent
-  deprel bigrams occur in the uploaded corpus are kept — the library's
-  standard behaviour. For small uploads (roughly < 100 sentences) the
-  observed bigram set is usually too sparse to license *any* reordering,
-  yielding zero variants; uncheck the box to allow all permutations.
+- **Input** (two modes, toggled on the page; **Sentence** is the default):
+  - *Sentence* — type **one** Hindi sentence into the text box (parsed with
+    Stanza), plus an optional **context sentence** (the preceding sentence).
+    Typed input is always UD (the scheme select is locked to UD) and runs with
+    the grammar filter **off**, so the single sentence still produces variants.
+    The context sentence is parsed and placed before the target in the scoring
+    corpus so context-aware scorers (`adaptive_lstm`, `information_status`) can
+    use it; **when no context sentence is given, those scorers are skipped**.
+    After the run, the target sentence's **dependency tree** (from the Stanza
+    parse) and **constituency tree** (from the Berkeley parser via `/taru/parse`)
+    render inline, each with an expand control. The first typed run downloads the
+    Stanza Hindi model (slow once).
+  - *File* — one `.conllu` or `.txt` upload (`.txt` = one Hindi sentence per
+    line, also parsed with Stanza). Uses the selected scheme and the grammar
+    filter **on** (see below).
+- **Options**: max variants per sentence, annotation scheme preset (Paninian /
+  UD root POS, File mode only), and which cognitive scorers to run. (Min
+  preverbal phrases is fixed internally at 2.)
+- **Grammar filter**: on for File mode, off for Sentence mode. When on, only
+  reorderings whose adjacent deprel bigrams occur in the corpus are kept (the
+  library's standard behaviour); for small corpora (roughly < 100 sentences)
+  the observed bigram set is usually too sparse to license *any* reordering,
+  which is why typed input turns it off.
 - **Downloads per stage** (available as soon as each stage finishes):
   `parsed.conllu` (only for `.txt` input), `passed_sentences.csv`,
   `rejected_sentences.csv`, `summary.json`, and `variants.csv`
@@ -676,6 +688,9 @@ the constituent order is already known.
 
 ### Built-in scorer: `dependency_length`
 
+- **Trained on:** Not trained (deterministic)
+- **Built with:** Gildea & Jaeger (2015) dependency-length formula (per-arc length = arc_length − 1)
+
 The dependency-length feature scorer (dependency-length-minimization, after
 Gildea & Jaeger 2015). It reconstructs each variant's reordered, re-indexed
 dependency tree (from the reference parse in `context["passed"]` plus the
@@ -703,6 +718,10 @@ Needs `context["passed"]` (the filter output). Without it the feature columns
 are emitted as zero vectors.
 
 ### Built-in scorer: `information_status`
+
+- **Trained on:** Not trained (deterministic)
+- **Built with:** given/new heuristic over the parse (Ranjan & van Schijndel 2024)
+- **Requires:** a context sentence
 
 Information Status (IS) / givenness, after Ranjan & van Schijndel (2024). For
 each pair it scores whether the **given** phrase (already mentioned in the
@@ -766,3 +785,122 @@ pairs_df = apply_scorers(
     },
 )
 ```
+
+### Built-in scorer: `surprisal`
+
+- **Trained on:** HDTB (Hindi Dependency Treebank)
+- **Built with:** Berkeley `hdtb_fresh` grammar + Taru `synproc` incremental parser
+
+Constituency (PCFG) **incremental** surprisal of each word order, from the
+SyntacticTreeSurprisal (Taru) toolkit on the HDTB grammar. Per-word surprisals
+are summed to a sentence total (bits).
+
+| Column | Description |
+|---|---|
+| `Surprisal_Reference` | Total constituency surprisal (bits) of the reference order |
+| `Surprisal_Variant` | Total constituency surprisal (bits) of the variant order |
+| `Delta_Surprisal` | Advantage: the `ML_Label`-oriented difference |
+
+### Built-in scorer: `trigram`
+
+- **Trained on:** Hindi text corpus
+- **Built with:** NLTK MLE trigram model
+- **Notes:** trigram→bigram→unigram backoff smoothing
+
+Trigram language-model surprisal (Ranjan & van Schijndel 2024), from a pickled
+NLTK MLE trigram model trained on Hindi (`scoring/models/trigram.pkl`). For each
+order it sums per-word surprisal `−ln P(wᵢ | wᵢ₋₂, wᵢ₋₁)` over the words that have
+full trigram context.
+
+**Smoothing.** The MLE model has no built-in smoothing (an unseen ngram scores
+exactly 0), so per-word probability uses a three-level backoff, falling through
+to a small epsilon for fully out-of-vocabulary words:
+
+| Level | Probability | Used when |
+|---|---|---|
+| Trigram | `P(w₃ \| w₁, w₂)` | the trigram was seen |
+| Bigram | `P(w₃ \| w₂)` | the trigram is unseen |
+| Unigram | `P(w₃)` | the bigram is also unseen |
+| Epsilon | `1e-12` | the word is fully OOV |
+
+Columns added to `variants.csv`:
+
+| Column | Description |
+|---|---|
+| `Trigram_Reference` | Total trigram surprisal (nats) of the reference order |
+| `Trigram_Variant` | Total trigram surprisal (nats) of the variant order |
+| `Delta_Trigram` | Advantage: the `ML_Label`-oriented difference (central diff step) |
+
+### Built-in scorer: `lstm`
+
+- **Trained on:** Hindi Wikipedia
+- **Built with:** 2-layer LSTM language model (embed 256 → LSTM 256, dropout 0.3)
+
+Base LSTM language-model surprisal, from a 2-layer LSTM (Embedding 256 → LSTM
+256 → Linear) trained on Hindi text (`scoring/models/base_model.pt` +
+`vocab.pkl`). Sums per-word next-word surprisals (`−log_softmax`).
+
+| Column | Description |
+|---|---|
+| `LSTM_Reference` | Total LSTM surprisal (nats) of the reference order |
+| `LSTM_Variant` | Total LSTM surprisal (nats) of the variant order |
+| `Delta_LSTM` | Advantage: the `ML_Label`-oriented difference |
+
+### Built-in scorer: `adaptive_lstm`
+
+- **Trained on:** Hindi Wikipedia (base LSTM)
+- **Built with:** base LSTM + one-step online adaptation (van Schijndel & Linzen 2018)
+- **Requires:** a context sentence
+
+Adaptive LSTM surprisal (van Schijndel & Linzen 2018; Ranjan & van Schijndel
+2024). The base LSTM is updated by **one** SGD step on the *preceding* (context)
+sentence, then used to score the reference and its variants — modelling how
+discourse context shapes a reader's expectations. Adaptation runs **once per
+source sentence**; all of that sentence's variants share the adapted weights;
+the shared base model is never mutated (a per-sentence `deepcopy` is adapted and
+discarded).
+
+This is a **context-aware** scorer: it reads `context["corpus"]` (a
+`CorpusContext`) to find the preceding sentence by `Sent_ID`. When there is no
+preceding sentence (first in the document, or no corpus context), no adaptation
+runs and the score equals the plain `lstm` surprisal.
+
+| Column | Description |
+|---|---|
+| `Adaptive_Reference` | Adaptive LSTM surprisal (nats) of the reference order |
+| `Adaptive_Variant` | Adaptive LSTM surprisal (nats) of the variant order |
+| `Delta_Adaptive` | Advantage: the `ML_Label`-oriented difference |
+
+### Built-in scorer: `berkeley_pcfg`
+
+- **Trained on:** HUTB — 13,282 DS-PS constituency trees
+- **Built with:** Berkeley Parser (PCFGLA) grammar, `-sentence_likelihood`
+- **Notes:** log-likelihood — higher = more probable
+
+Berkeley **DS-PS** PCFG *sentence log-likelihood*, scored with the Berkeley
+Parser (`-sentence_likelihood`) on the HDTB DS-PS grammar
+(`scoring/models/hdtb_dsps_grammar`), reusing the jar already bundled for the
+Taru tool (`taru/external_resources/berkeleyparser/berkeleyParser.jar`). One
+batched JVM call scores all unique surfaces in the table.
+
+> **Units.** This is a **log-likelihood** (higher = more probable), *not* a
+> surprisal. It is distinct from the `surprisal` scorer, which is *incremental*
+> constituency surprisal from the Taru `synproc` engine on a different
+> (`hdtb_fresh`) grammar.
+
+Requires **Java** on `PATH` (present in the Docker image). If the jar/grammar is
+missing, Java is unavailable, or a sentence is unparseable, that score is `NaN`.
+
+| Column | Description |
+|---|---|
+| `PCFG_Reference` | Sentence log-likelihood of the reference order |
+| `PCFG_Variant` | Sentence log-likelihood of the variant order |
+| `Delta_PCFG` | Advantage: the `ML_Label`-oriented difference |
+
+> **Model artifacts.** `trigram`, `lstm`, and `adaptive_lstm` load large files
+> from `scoring/models/` (`trigram.pkl` 226 MB, `base_model.pt` 65 MB,
+> `vocab.pkl`); `berkeley_pcfg` needs `hdtb_dsps_grammar` (1.7 MB). These are
+> kept out of git (too large for GitHub) and baked into the Docker image — place
+> them in `scoring/models/` for local runs. All loading is deferred to first use,
+> so plugin discovery and the rest of the pipeline are unaffected when a scorer
+> is not selected.

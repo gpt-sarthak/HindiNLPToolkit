@@ -29,6 +29,9 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
                        uploads where the observed set is too sparse to allow
                        any reordering)
     scorers          : list[str] of scorer names to apply to the pairs table
+    context_text     : optional preceding sentence (Sentence mode) parsed and
+                       prepended to the scoring corpus so context-aware scorers
+                       can see a predecessor; never filtered or permuted
     """
     from filtering import filter_sentences, summarize
     from scoring import apply_scorers, build_corpus_context
@@ -39,12 +42,25 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
 
     # ── Stage 1: parse ────────────────────────────────────────────────────
     job.stage = "parse"
-    sentences = load_input(str(input_path))
+    sentences = load_input(str(input_path))          # target sentence(s)
     if input_path.suffix.lower() == ".txt":
-        # .txt input went through Stanza — offer the resulting CoNLL-U.
+        # .txt input went through Stanza — offer the resulting CoNLL-U (the
+        # target only; the tree view reads this single-sentence parse).
         conllu_text = "".join(sent.serialize() for sent in sentences)
         (out / "parsed.conllu").write_text(conllu_text, encoding="utf-8")
         job.artifacts.append("parsed.conllu")
+
+    # Optional context sentence: parse it separately and place it *before* the
+    # target in the scoring corpus so context-aware scorers (adaptive_lstm,
+    # information_status) can see a preceding sentence. The context is NEVER
+    # filtered or permuted — only the target is.
+    corpus_sentences = list(sentences)
+    context_text = (options.get("context_text") or "").strip()
+    if context_text:
+        ctx_sentences = load_input(context_text)
+        for i, sent in enumerate(ctx_sentences):
+            sent.metadata["sent_id"] = f"context_s{i + 1}"
+        corpus_sentences = list(ctx_sentences) + list(sentences)
 
     # ── Stage 2: filter ───────────────────────────────────────────────────
     job.stage = "filter"
@@ -93,7 +109,7 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
         # from the full pre-filter sentence list so textual predecessors are
         # preserved even when filtered out.
         context = {
-            "corpus": build_corpus_context(sentences),
+            "corpus": build_corpus_context(corpus_sentences),
             "passed": passed,
             "scheme": options.get("scheme"),
         }

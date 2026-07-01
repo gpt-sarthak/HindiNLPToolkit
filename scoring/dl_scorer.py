@@ -86,9 +86,10 @@ class DependencyLengthScorer(Scorer):
     name = "dependency_length"
     description = (
         "Dependency-length feature vectors [total_DL, last_DL, second_last_DL, "
-        "last_len, second_last_len] for the reference and variant orders "
-        "(per-arc length = arc_length - 1; Gildea & Jaeger 2015). Advantage: Delta_DL."
+        "last_len, second_last_len] for each word order. Advantage: Delta_DL."
     )
+    trained_on = "Not trained (deterministic)"
+    built_with = "Gildea & Jaeger (2015) dependency-length formula (per-arc length = arc_length - 1)"
 
     def score(self, pairs_df: pd.DataFrame, context: Optional[dict] = None) -> pd.DataFrame:
         df = pairs_df.copy()

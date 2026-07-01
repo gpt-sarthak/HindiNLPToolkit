@@ -204,9 +204,12 @@ class InformationStatusScorer(Scorer):
     name = "information_status"
     description = (
         "Information Status (givenness) of subject vs. object: +1 given-before-new, "
-        "-1 new-before-given, 0 otherwise. Delta_IS = IS_Reference - IS_Variant "
-        "(positive = reference adheres to given-before-new). Ranjan & van Schijndel 2024."
+        "-1 new-before-given, 0 otherwise. Advantage: Delta_IS (positive = "
+        "reference adheres to given-before-new)."
     )
+    trained_on = "Not trained (deterministic)"
+    built_with = "Given/new heuristic over the parse (Ranjan & van Schijndel 2024)"
+    needs_previous_sentence = True
 
     def score(self, pairs_df: pd.DataFrame, context: Optional[dict] = None) -> pd.DataFrame:
         df = pairs_df.copy()

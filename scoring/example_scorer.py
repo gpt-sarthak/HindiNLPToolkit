@@ -33,6 +33,11 @@ Example
     class MyScorer(Scorer):
         name = "my_scorer"                  # shown as a checkbox in the UI
         description = "One line shown in the web UI."
+        # Optional standardized metadata, rendered as bullets in the scorer list.
+        # Leave "" to omit a bullet; empty trained_on reads as "not trained".
+        trained_on = "Not trained (deterministic)"
+        built_with = "Describe the model/method/paper used to build this."
+        notes = "Anything else worth stating (smoothing, units, caveats)."
 
         def score(self, pairs_df):
             df = pairs_df.copy()

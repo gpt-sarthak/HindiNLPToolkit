@@ -117,6 +117,28 @@
   }
   input[type="file"] { display: none; }
 
+  /* Sentence ↔ File input mode */
+  .mode-toggle { display: flex; border: 1.5px solid var(--ink); margin-bottom: 1.1rem; }
+  .mode-toggle button {
+    flex: 1; font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 0.5rem; cursor: pointer;
+    background: var(--paper); color: var(--ink-soft); border: 0;
+    border-right: 1.5px solid var(--ink); transition: background 0.15s, color 0.15s;
+  }
+  .mode-toggle button:last-child { border-right: 0; }
+  .mode-toggle button.active { background: var(--ink); color: var(--paper); }
+  textarea#text-input {
+    width: 100%; min-height: 130px; resize: vertical; display: block;
+    font-family: var(--sans); font-size: 0.95rem; line-height: 1.55;
+    padding: 0.7rem 0.8rem; margin-bottom: 1.1rem;
+    border: 1.5px solid var(--line); background: var(--paper); color: var(--ink);
+  }
+  textarea#text-input.hidden { display: none; }  /* beats the id rule's display:block */
+  textarea#text-input:focus { outline: 2px solid var(--vermilion); outline-offset: -1px; }
+  textarea#text-input::placeholder { color: var(--ink-soft); }
+  select:disabled { opacity: 0.55; cursor: not-allowed; }
+  .scheme-note { display: block; margin-top: 0.3rem; font-size: 0.74rem; color: var(--vermilion-deep); }
+
   .opt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 1rem; }
   label.field { display: block; font-size: 0.78rem; font-weight: 600; color: var(--ink-soft); }
   label.field span { display: block; margin-bottom: 0.3rem; letter-spacing: 0.04em; text-transform: uppercase; font-size: 0.68rem; }
@@ -134,6 +156,10 @@
   .scorer-row input { accent-color: var(--vermilion); margin-top: 0.2rem; }
   .scorer-row .desc { color: var(--ink-soft); font-size: 0.74rem; display: block; }
   .scorer-row code { font-family: var(--mono); font-size: 0.8rem; }
+  .scorer-row .scorer-meta { list-style: none; margin: 0.25rem 0 0; padding: 0; color: var(--ink-soft); font-size: 0.7rem; }
+  .scorer-row .scorer-meta li { position: relative; padding-left: 0.85rem; line-height: 1.4; }
+  .scorer-row .scorer-meta li::before { content: "\2022"; position: absolute; left: 0; color: var(--vermilion); }
+  .scorer-row .scorer-meta strong { color: var(--ink); font-weight: 600; }
   .scorers .none { font-size: 0.78rem; color: var(--ink-soft); }
 
   button.go {
@@ -181,6 +207,9 @@
   }
   a.dl:hover { background: var(--vermilion); border-color: var(--vermilion); color: #fff; }
   a.dl::before { content: "↓"; font-weight: 700; }
+  .download-all { margin-top: 0.9rem; }
+  a.dl.all { background: var(--ink); color: var(--paper); border-color: var(--ink); font-weight: 600; }
+  a.dl.all:hover { background: var(--vermilion-deep); border-color: var(--vermilion-deep); color: #fff; }
 
   .idle-note, .error-note { font-size: 0.85rem; color: var(--ink-soft); }
   .error-note { color: var(--vermilion-deep); font-family: var(--mono); font-size: 0.78rem; white-space: pre-wrap; }
@@ -203,6 +232,57 @@
 
   @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(194,73,29,0.45); } 50% { box-shadow: 0 0 0 6px rgba(194,73,29,0); } }
+
+  /* ── context sentence box ── */
+  .context-field { margin-top: 0.6rem; }
+  .ctx-label { display: block; font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); margin-bottom: 0.25rem; }
+  .ctx-label span { font-weight: 400; }
+  textarea#context-input { width: 100%; box-sizing: border-box; min-height: 2.6rem; padding: 0.55rem 0.7rem; font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--paper); border: 1.5px solid var(--line); border-radius: 7px; resize: vertical; }
+  textarea#context-input:focus { outline: none; border-color: var(--vermilion); }
+  .ctx-note { display: block; font-size: 0.68rem; color: var(--ink-soft); margin-top: 0.3rem; }
+
+  /* ── tree cards (two clean white boxes side by side; contained + scrollable) ── */
+  .trees { margin-top: 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; align-items: start; }
+  .tree-block { min-width: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+  .tree-head { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; padding: 0.45rem 0.6rem; background: #fff; border-bottom: 1px solid var(--line); }
+  .tree-head h3 { margin: 0; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
+  .tree-expand { font-family: var(--mono); font-size: 0.68rem; font-weight: 600; color: var(--vermilion-deep); background: var(--paper); border: 1px solid var(--line); border-radius: 5px; padding: 0.2rem 0.5rem; cursor: pointer; }
+  .tree-expand:hover { background: var(--vermilion); color: #fff; border-color: var(--vermilion); }
+  /* overflow:auto + min-width:0 on the block keep a wide/tall diagram scrolling
+     INSIDE the box — it can never widen the page or shift the layout/zoom. */
+  .tree-view { overflow: auto; max-height: 300px; padding: 0.6rem; background: #fff; }
+  .tree-view svg { display: block; }
+  .tree-msg { font-size: 0.75rem; color: var(--ink-soft); padding: 0.5rem 0.4rem; }
+  .tree-msg.err { color: var(--vermilion-deep); }
+
+  /* ── dependency arc svg ── */
+  .arc-svg .arc-path { fill: none; stroke-width: 1.5; opacity: .9; }
+  .arc-svg .nsubj { stroke: var(--vermilion); fill: var(--vermilion); }
+  .arc-svg .obj, .arc-svg .iobj { stroke: #b5651d; fill: #b5651d; }
+  .arc-svg .case { stroke: #6a5acd; fill: #6a5acd; }
+  .arc-svg .obl { stroke: #7a4800; fill: #7a4800; }
+  .arc-svg .amod, .arc-svg .compound { stroke: #4a7c2f; fill: #4a7c2f; }
+  .arc-svg .root-dep { stroke: var(--vermilion-deep); fill: var(--vermilion-deep); }
+  .arc-svg .dep-other { stroke: var(--ink-soft); fill: var(--ink-soft); }
+  .arc-svg .tok-wrap { fill: #fff; stroke: var(--line); }
+  .arc-svg .tok-wrap.NOUN, .arc-svg .tok-wrap.PROPN { fill: #e6f1fb; stroke: #c7dcef; }
+  .arc-svg .tok-wrap.VERB, .arc-svg .tok-wrap.AUX { fill: #eaf3de; stroke: #cddfb6; }
+  .arc-svg .tok-wrap.ADJ { fill: #fff0d0; stroke: #ebdba8; }
+  .arc-svg .tok-wrap.ADP, .arc-svg .tok-wrap.PART { fill: #f3f0f8; stroke: #d9d2e7; }
+  .arc-svg .tok-text { font-family: "Noto Sans Devanagari", serif; font-size: 13px; fill: var(--ink); }
+  .arc-svg .tok-pos { font-family: var(--mono); font-size: 9px; fill: var(--ink-soft); font-weight: 600; letter-spacing: .04em; }
+  .arc-svg .rel-label { font-family: var(--mono); font-size: 9px; font-weight: 500; }
+  .arc-svg .arc-len { font-family: var(--mono); font-size: 8.5px; fill: var(--ink-soft); }
+
+  /* ── expand overlay ── */
+  .tree-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(20,18,12,.5); backdrop-filter: blur(2px); display: flex; flex-direction: column; }
+  .tree-overlay-bar { display: flex; align-items: center; justify-content: space-between; padding: 0.7rem 1rem; background: var(--paper); border-bottom: 1px solid var(--line); }
+  .tree-overlay-bar span { font-size: 0.8rem; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+  .tree-overlay-bar button { font-family: var(--mono); font-size: 0.75rem; font-weight: 600; color: var(--vermilion-deep); background: none; border: 1px solid var(--line); border-radius: 5px; padding: 0.25rem 0.6rem; cursor: pointer; }
+  .tree-overlay-bar button:hover { background: var(--vermilion); color: #fff; border-color: var(--vermilion); }
+  .tree-overlay-body { flex: 1; overflow: auto; padding: 1.5rem; background: var(--paper); text-align: center; }
+  .tree-overlay-body svg { display: inline-block; }
+
   .hidden { display: none; }
 </style>
 </head>
@@ -222,7 +302,22 @@
     <section class="card" style="animation-delay:0.05s">
       <h2><span class="num">01</span> Corpus &amp; options</h2>
       <form id="job-form">
-        <div class="dropzone" id="dropzone">
+        <div class="mode-toggle" id="mode-toggle">
+          <button type="button" data-mode="sentence" class="active">Sentence</button>
+          <button type="button" data-mode="file">File</button>
+        </div>
+
+        <textarea id="text-input" name="text"
+          placeholder="Type one Hindi sentence.&#10;राम ने बाज़ार से ताज़ी सब्जियाँ और फल ख़रीदे।"></textarea>
+
+        <div class="context-field hidden" id="context-field">
+          <label class="ctx-label" for="context-input">Context sentence <span>(optional — the preceding sentence)</span></label>
+          <textarea id="context-input" name="context_text"
+            placeholder="Optional: the sentence that comes before — used by context-aware scorers."></textarea>
+          <span class="ctx-note">Adaptive LSTM and Information Status run only when a context sentence is given.</span>
+        </div>
+
+        <div class="dropzone hidden" id="dropzone">
           <div class="big">Drop a file here, or click to browse</div>
           <div class="hint">.conllu (parsed treebank) or .txt (one Hindi sentence per line, parsed with Stanza)</div>
           <div class="picked" id="picked-name"></div>
@@ -230,30 +325,21 @@
         </div>
 
         <div class="opt-grid">
-          <label class="field"><span>Min preverbal phrases</span>
-            <input type="number" name="min_phrases" value="2" min="1" max="10">
-          </label>
           <label class="field"><span>Max variants / sentence</span>
             <input type="number" name="max_variants" value="99" min="1" max="500">
           </label>
           <label class="field" style="grid-column: 1 / -1;"><span>Annotation scheme</span>
-            <select name="root_pos">
+            <select name="root_pos" id="root-pos">
               <option value="paninian">Paninian (k1/k2, VM/VAUX) — for ISCNLP-style .conllu</option>
               <option value="ud">UD (nsubj/obj, copular NOUN/ADJ roots) — for UD .conllu or parsed .txt</option>
             </select>
             <span class="desc">Drives root-POS handling and scheme-aware scorers (e.g. Information Status). Raw / .txt input is parsed by Stanza as UD, so pick UD for those; Paninian applies to pre-annotated Paninian .conllu.</span>
-          </label>
-          <label class="scorer-row" style="grid-column: 1 / -1;">
-            <input type="checkbox" id="grammar-filter" checked>
-            <span><code>grammar filter</code>
-              <span class="desc">Keep only reorderings whose adjacent deprel pairs occur in the uploaded
-              corpus. Uncheck for small uploads (&lt; ~100 sentences), where the observed
-              pairs are too sparse to allow any reordering.</span></span>
+            <span class="scheme-note hidden" id="scheme-note">Typed sentences are parsed by Stanza as UD — scheme is fixed to UD.</span>
           </label>
         </div>
 
         <fieldset class="scorers">
-          <legend>Pair scorers</legend>
+          <legend>Cognitive scorers</legend>
           <div id="scorer-list"><span class="none">Loading…</span></div>
         </fieldset>
 
@@ -281,6 +367,25 @@
             <div class="downloads"></div>
           </div>
         </div>
+        <div class="download-all hidden" id="download-all">
+          <a class="dl all" id="download-all-link" href="#">Download all files (.zip)</a>
+        </div>
+        <div class="trees hidden" id="trees">
+          <div class="tree-block">
+            <div class="tree-head">
+              <h3>Dependency tree</h3>
+              <button type="button" class="tree-expand" data-tree="dep">⤢ Expand</button>
+            </div>
+            <div class="tree-view" id="dep-tree"></div>
+          </div>
+          <div class="tree-block">
+            <div class="tree-head">
+              <h3>Constituency tree</h3>
+              <button type="button" class="tree-expand" data-tree="con">⤢ Expand</button>
+            </div>
+            <div class="tree-view" id="con-tree"></div>
+          </div>
+        </div>
         <p class="error-note hidden" id="error-note"></p>
       </div>
       
@@ -297,12 +402,20 @@
         <h2><span class="num">04</span> Syntactic Tree &amp; Surprisal toolkit</h2>
         <p class="idle-note">Parse Hindi into constituency trees and per-word surprisal with the toolkit — the same HDTB backend the <code>surprisal</code> scorer calls. Open it as its own page; nothing leaves this server.</p>
         <div class="downloads" style="margin-top:0.8rem">
-          <a class="dl" id="taru-open" href="/taru" style="text-decoration:none">Open Tree &amp; Surprisal →</a>
+          <a class="dl" id="taru-open" href="/taru" target="_blank" rel="noopener" style="text-decoration:none">Open Tree &amp; Surprisal →</a>
         </div>
       </div>
     </section>
     </section>
   </main>
+
+  <div class="tree-overlay hidden" id="tree-overlay">
+    <div class="tree-overlay-bar">
+      <span id="tree-overlay-title"></span>
+      <button type="button" id="tree-overlay-close">✕ Close</button>
+    </div>
+    <div class="tree-overlay-body" id="tree-overlay-body"></div>
+  </div>
 
   <footer>
     HindiNLPToolKit · dependency-length research · API docs at <a href="/docs">/docs</a>
@@ -331,7 +444,15 @@ const dropzone = document.getElementById("dropzone");
 const pickedName = document.getElementById("picked-name");
 const submitBtn = document.getElementById("submit-btn");
 const formError = document.getElementById("form-error");
+const textInput = document.getElementById("text-input");
+const modeToggle = document.getElementById("mode-toggle");
+const rootPos = document.getElementById("root-pos");
+const schemeNote = document.getElementById("scheme-note");
+const contextInput = document.getElementById("context-input");
+const contextField = document.getElementById("context-field");
+let inputMode = "sentence";  // "sentence" | "file"
 let pollTimer = null;
+let treesRenderedFor = null;  // jobId whose trees are already drawn
 
 // ── Scorer checkboxes from the plugin registry ──────────────
 fetch("/api/plugins").then(r => r.json()).then(plugins => {
@@ -344,14 +465,110 @@ fetch("/api/plugins").then(r => r.json()).then(plugins => {
   for (const p of plugins) {
     const row = document.createElement("label");
     row.className = "scorer-row";
-    row.innerHTML = `<input type="checkbox" value="${p.name}">
-      <span><code>${p.name}</code><span class="desc">${p.description}</span></span>`;
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = p.name;
+
+    const info = document.createElement("span");
+    const code = document.createElement("code");
+    code.textContent = p.name;
+    const desc = document.createElement("span");
+    desc.className = "desc";
+    desc.textContent = p.description;
+    info.append(code, desc);
+
+    // Standardized metadata bullets (only the fields the scorer filled in).
+    const meta = [
+      ["Trained on", p.trained_on],
+      ["Built with", p.built_with],
+      ["Notes", p.notes],
+      ["Requires", p.needs_previous_sentence ? "a context sentence" : ""],
+    ].filter(([, v]) => v);
+    if (meta.length) {
+      const ul = document.createElement("ul");
+      ul.className = "scorer-meta";
+      for (const [label, value] of meta) {
+        const li = document.createElement("li");
+        const b = document.createElement("strong");
+        b.textContent = `${label}: `;
+        li.append(b, document.createTextNode(value));
+        ul.appendChild(li);
+      }
+      info.appendChild(ul);
+    }
+
+    row.append(cb, info);
     box.appendChild(row);
   }
 }).catch(() => {
   document.getElementById("scorer-list").innerHTML =
     '<span class="none">Could not load plugins.</span>';
 });
+
+// ── Input mode (Sentence ↔ File) ────────────────────────────
+modeToggle.addEventListener("click", e => {
+  const btn = e.target.closest("button[data-mode]");
+  if (btn) setMode(btn.dataset.mode);
+});
+
+function setMode(mode) {
+  inputMode = mode;
+  sessionStorage.setItem("hnt.mode", mode);
+  for (const b of modeToggle.querySelectorAll("button")) {
+    b.classList.toggle("active", b.dataset.mode === mode);
+  }
+  const sentence = mode === "sentence";
+  textInput.classList.toggle("hidden", !sentence);
+  contextField.classList.toggle("hidden", !sentence);
+  dropzone.classList.toggle("hidden", sentence);
+  // Typed text is parsed by Stanza as UD — lock the scheme to UD.
+  rootPos.disabled = sentence;
+  schemeNote.classList.toggle("hidden", !sentence);
+  if (sentence) rootPos.value = "ud";
+  formError.textContent = "";
+  updateSubmitState();
+}
+
+function updateSubmitState() {
+  submitBtn.disabled = inputMode === "sentence"
+    ? textInput.value.trim() === ""
+    : fileInput.files.length === 0;
+}
+
+// ── Session persistence (survive navigating to /taru and back) ──────────
+// Re-attach to a still-live job: repaint its stages, chips and summary, and
+// resume polling if it is not finished. Silently drops expired job ids.
+async function attachJob(jobId) {
+  let res;
+  try { res = await fetch(`/api/jobs/${jobId}`); }
+  catch { sessionStorage.removeItem("hnt.jobId"); return; }
+  if (!res.ok) { sessionStorage.removeItem("hnt.jobId"); return; }  // expired
+  const job = await res.json();
+  document.getElementById("idle-note").classList.add("hidden");
+  document.getElementById("stages").classList.remove("hidden");
+  render(job, jobId);
+  if (job.status === "failed") showError(job.error);
+  else if (job.status !== "done") startPolling(jobId);
+}
+
+function restoreSession() {
+  clearInterval(pollTimer);
+  const mode = sessionStorage.getItem("hnt.mode") || "sentence";
+  textInput.value = sessionStorage.getItem("hnt.text") || "";
+  contextInput.value = sessionStorage.getItem("hnt.context") || "";
+  setMode(mode);
+  const fileName = sessionStorage.getItem("hnt.fileName");
+  if (mode === "file" && fileName && fileInput.files.length === 0) {
+    pickedName.textContent = `${fileName} · re-select to run again`;
+  }
+  const jobId = sessionStorage.getItem("hnt.jobId");
+  if (jobId) attachJob(jobId);
+}
+
+// pageshow fires on the initial load AND on back/forward (bfcache) restore,
+// so the page rebuilds its state in both cases.
+window.addEventListener("pageshow", restoreSession);
 
 // ── File picking ────────────────────────────────────────────
 dropzone.addEventListener("click", () => fileInput.click());
@@ -363,32 +580,46 @@ dropzone.addEventListener("drop", e => {
   if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; onFilePicked(); }
 });
 fileInput.addEventListener("change", onFilePicked);
+textInput.addEventListener("input", () => {
+  sessionStorage.setItem("hnt.text", textInput.value);
+  formError.textContent = ""; updateSubmitState();
+});
+contextInput.addEventListener("input", () => {
+  sessionStorage.setItem("hnt.context", contextInput.value);
+});
 
 function onFilePicked() {
   const f = fileInput.files[0];
   if (!f) return;
   pickedName.textContent = `${f.name} · ${(f.size / 1024).toFixed(1)} KB`;
-  submitBtn.disabled = false;
+  sessionStorage.setItem("hnt.fileName", f.name);
   formError.textContent = "";
+  updateSubmitState();
 }
 
 // ── Submit ──────────────────────────────────────────────────
 document.getElementById("job-form").addEventListener("submit", async e => {
   e.preventDefault();
-  const f = fileInput.files[0];
-  if (!f) return;
 
   const fd = new FormData();
-  fd.append("file", f);
-  fd.append("min_phrases", e.target.min_phrases.value);
+  if (inputMode === "sentence") {
+    const text = textInput.value.trim();
+    if (!text) return;
+    fd.append("text", text);
+    fd.append("context_text", contextInput.value.trim());
+    fd.append("root_pos", "ud");
+  } else {
+    const f = fileInput.files[0];
+    if (!f) return;
+    fd.append("file", f);
+    fd.append("root_pos", rootPos.value);
+  }
   fd.append("max_variants", e.target.max_variants.value);
-  fd.append("root_pos", e.target.root_pos.value);
-  fd.append("grammar_filter", document.getElementById("grammar-filter").checked);
   const checked = [...document.querySelectorAll("#scorer-list input:checked")].map(c => c.value);
   fd.append("scorers", checked.join(","));
 
   submitBtn.disabled = true;
-  submitBtn.textContent = "Uploading…";
+  submitBtn.textContent = "Submitting…";
   formError.textContent = "";
   resetResults();
 
@@ -396,6 +627,7 @@ document.getElementById("job-form").addEventListener("submit", async e => {
     const res = await fetch("/api/jobs", { method: "POST", body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || res.statusText);
+    sessionStorage.setItem("hnt.jobId", data.job_id);
     startPolling(data.job_id);
   } catch (err) {
     formError.textContent = err.message;
@@ -411,6 +643,9 @@ function resetResults() {
   document.getElementById("stages").classList.remove("hidden");
   document.getElementById("error-note").classList.add("hidden");
   document.getElementById("summary-card").classList.add("hidden");
+  document.getElementById("download-all").classList.add("hidden");
+  document.getElementById("trees").classList.add("hidden");
+  treesRenderedFor = null;
   for (const el of document.querySelectorAll(".stage")) {
     el.className = "stage";
     el.querySelector(".stage-state").textContent = "pending";
@@ -475,7 +710,20 @@ function render(job, jobId) {
     holder.appendChild(a);
   }
 
+  // "Download all" appears once there is more than one file to bundle.
+  if (job.artifacts.length > 1) {
+    document.getElementById("download-all-link").href = `/api/jobs/${jobId}/files.zip`;
+    document.getElementById("download-all").classList.remove("hidden");
+  }
+
   if (job.summary) renderSummary(job.summary);
+
+  // Draw the trees once, when the single sentence's parse is ready.
+  if (job.status === "done" && job.artifacts.includes("parsed.conllu")
+      && treesRenderedFor !== jobId) {
+    treesRenderedFor = jobId;
+    renderTrees(jobId);
+  }
 }
 
 function renderSummary(s) {
@@ -510,6 +758,228 @@ function showError(msg) {
   const note = document.getElementById("error-note");
   note.textContent = msg;
   note.classList.remove("hidden");
+}
+
+// ── Trees (dependency + constituency) for the single submitted sentence ──────
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// Parse a CoNLL-U string into [{text, tokens:[{id,word,upos,head,deprel}]}].
+function parseConllu(text) {
+  const out = [];
+  for (const block of text.split(/\n\s*\n/)) {
+    if (!block.trim()) continue;
+    let sentText = "";
+    const tokens = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("# text")) {
+        const m = line.match(/#\s*text\s*=\s*(.*)$/);
+        if (m) sentText = m[1].trim();
+        continue;
+      }
+      if (line.startsWith("#") || !line.trim()) continue;
+      const c = line.split("\t");
+      if (c.length < 8 || c[0].includes("-") || c[0].includes(".")) continue;
+      tokens.push({ id: parseInt(c[0], 10), word: c[1], upos: c[3],
+                    head: parseInt(c[6], 10), deprel: c[7] });
+    }
+    if (tokens.length) {
+      if (!sentText) sentText = tokens.map(t => t.word).join(" ");
+      out.push({ text: sentText, tokens });
+    }
+  }
+  return out;
+}
+
+function relClass(deprel) {
+  const base = (deprel || "").split(":")[0];
+  const map = { nsubj: "nsubj", obj: "obj", iobj: "iobj", case: "case",
+                obl: "obl", amod: "amod", compound: "compound" };
+  return map[base] || "dep-other";
+}
+
+// Dependency arc diagram (adapted from the Hindi Word-Order Explorer).
+function buildArcSVG(arcs) {
+  const n = arcs.length;
+  if (!n) return '<div class="tree-msg">No parse available.</div>';
+  const spacing = 84, boxH = 26, tokenY = 152, svgH = 200;
+  const svgW = Math.max(460, n * spacing + 80);
+  const startX = (svgW - (n - 1) * spacing) / 2;
+  const xOf = {};
+  arcs.forEach((tok, i) => { xOf[tok.id] = startX + i * spacing; });
+  const arcToks = arcs.filter(t => t.head !== 0)
+    .sort((a, b) => Math.abs(b.id - b.head) - Math.abs(a.id - a.head));
+  const usedTops = {};
+  let paths = "", arrows = "", labels = "";
+  arcToks.forEach(tok => {
+    const x1 = xOf[tok.id], x2 = xOf[tok.head];
+    if (x1 == null || x2 == null) return;
+    const span = Math.abs(tok.id - tok.head);
+    let arcTop = Math.max(8, tokenY - 24 - span * 19);
+    while (usedTops[arcTop]) arcTop -= 7;
+    usedTops[arcTop] = true;
+    const midX = (x1 + x2) / 2, rc = relClass(tok.deprel);
+    const depBase = (tok.deprel || "").split(":")[0];
+    paths += `<path class="arc-path ${rc}" style="fill:none" d="M${x1} ${tokenY} C${x1} ${arcTop},${x2} ${arcTop},${x2} ${tokenY}"/>`;
+    arrows += `<polygon points="${x2},${tokenY-4} ${x2-5},${tokenY-12} ${x2+5},${tokenY-12}" class="${rc}"/>`;
+    labels += `<text x="${midX}" y="${arcTop-3}" text-anchor="middle" class="rel-label ${rc}">${esc(depBase)}</text>`;
+    labels += `<text x="${midX}" y="${arcTop+12}" text-anchor="middle" class="arc-len">${span-1}</text>`;
+  });
+  const rootTok = arcs.find(t => t.head === 0);
+  let rootMark = "";
+  if (rootTok) {
+    const rx = xOf[rootTok.id];
+    rootMark = `<line x1="${rx}" y1="0" x2="${rx}" y2="${tokenY}" stroke="#9c3713" stroke-width="1" stroke-dasharray="3 3" opacity=".35"/><text x="${rx}" y="11" text-anchor="middle" class="rel-label root-dep">ROOT</text>`;
+  }
+  let boxes = "";
+  arcs.forEach(tok => {
+    const cx = xOf[tok.id], upos = tok.upos || "", bw = 56;
+    boxes += `<rect class="tok-wrap ${esc(upos)}" x="${cx-bw/2}" y="${tokenY}" width="${bw}" height="${boxH}" rx="5"/><text x="${cx}" y="${tokenY+17}" text-anchor="middle" class="tok-text">${esc(tok.word)}</text><text x="${cx}" y="${tokenY+38}" text-anchor="middle" class="tok-pos">${esc(upos)}</text>`;
+  });
+  return `<svg class="arc-svg" viewBox="0 0 ${svgW} ${svgH}" width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg">${rootMark}${paths}${arrows}${labels}${boxes}</svg>`;
+}
+
+// Bracketed constituency tree → SVG (adapted from taru_viewer.html; tree-only).
+function parseTree(str) {
+  const s = str.trim(); let i = 0; const ws = c => /\s/.test(c);
+  const skip = () => { while (i < s.length && ws(s[i])) i++; };
+  function node() {
+    skip(); if (s[i] !== "(") throw new Error("Expected '(' at " + i); i++; skip();
+    let label = ""; while (i < s.length && !ws(s[i]) && s[i] !== "(" && s[i] !== ")") label += s[i++];
+    const nd = { label, children: [], word: null }; skip();
+    while (i < s.length && s[i] !== ")") {
+      if (s[i] === "(") nd.children.push(node());
+      else { let w = ""; while (i < s.length && !ws(s[i]) && s[i] !== "(" && s[i] !== ")") w += s[i++]; nd.word = nd.word ? nd.word + " " + w : w; }
+      skip();
+    }
+    if (s[i] !== ")") throw new Error("Expected ')' near " + i); i++; return nd;
+  }
+  return node();
+}
+const _isPre = n => n.children.length === 0 && n.word !== null;
+const _mctx = document.createElement("canvas").getContext("2d");
+const _measure = (t, f) => { _mctx.font = f; return _mctx.measureText(t).width; };
+function buildConstituencySVG(root) {
+  const LAB = '600 15px "IBM Plex Mono",monospace', WD = '500 19px "Noto Sans Devanagari",serif';
+  const LEVEL = 60, WGAP = 40, SGAP = 6, PAD = 14, MX = 22, MY = 26;
+  let maxD = 0;
+  (function w(n, d) {
+    maxD = Math.max(maxD, d);
+    if (_isPre(n)) n.width = Math.max(_measure(n.label, LAB), _measure(n.word, WD)) + PAD * 2;
+    else { let s = 0; for (const ch of n.children) s += w(ch, d + 1); n.width = Math.max(s, _measure(n.label, LAB) + PAD * 2); }
+    return n.width;
+  })(root, 0);
+  (function p(n, left, d) {
+    n.y = MY + d * LEVEL;
+    if (_isPre(n)) n.x = left + n.width / 2;
+    else {
+      const tot = n.children.reduce((a, c) => a + c.width, 0);
+      let cur = left + Math.max(0, (n.width - tot) / 2);
+      for (const ch of n.children) { p(ch, cur, d + 1); cur += ch.width; }
+      n.x = (n.children[0].x + n.children[n.children.length - 1].x) / 2;
+    }
+  })(root, 0, 0);
+  const W = root.width + MX * 2, H = MY + maxD * LEVEL + WGAP + SGAP + MY;
+  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("xmlns", NS); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
+  const st = document.createElementNS(NS, "style");
+  st.textContent = '.nt{font-family:"IBM Plex Mono",monospace;font-weight:600;fill:#211d17}.pos{font-family:"IBM Plex Mono",monospace;font-weight:600;fill:#27645f}.wd{font-family:"Noto Sans Devanagari",serif;font-weight:500;fill:#211d17}.edge{stroke:#b9ad96;stroke-width:1.4;fill:none}';
+  svg.appendChild(st);
+  const el = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  const txt = (x, y, c, s) => { const t = el("text", { x: x + MX, y, "text-anchor": "middle", class: c }); t.textContent = s; return t; };
+  (function draw(n) {
+    svg.appendChild(txt(n.x, n.y, _isPre(n) ? "pos" : "nt", n.label));
+    if (_isPre(n)) {
+      const wy = n.y + WGAP;
+      svg.appendChild(el("line", { x1: n.x + MX, y1: n.y + 6, x2: n.x + MX, y2: wy - 15, class: "edge" }));
+      svg.appendChild(txt(n.x, wy, "wd", n.word));
+    } else for (const ch of n.children) {
+      svg.appendChild(el("line", { x1: n.x + MX, y1: n.y + 6, x2: ch.x + MX, y2: ch.y - 15, class: "edge" }));
+      draw(ch);
+    }
+  })(root);
+  return svg;
+}
+
+async function renderTrees(jobId) {
+  const treesEl = document.getElementById("trees");
+  const depEl = document.getElementById("dep-tree");
+  const conEl = document.getElementById("con-tree");
+  treesEl.classList.remove("hidden");
+  depEl.innerHTML = '<div class="tree-msg">Loading…</div>';
+  conEl.innerHTML = '<div class="tree-msg">Parsing constituency tree…</div>';
+
+  let sentences;
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/files/parsed.conllu`);
+    if (!res.ok) throw new Error();
+    sentences = parseConllu(await res.text());
+  } catch {
+    depEl.innerHTML = '<div class="tree-msg err">Could not load the parse.</div>';
+    conEl.innerHTML = "";
+    return;
+  }
+  if (!sentences.length) {
+    depEl.innerHTML = '<div class="tree-msg">No sentence to show.</div>';
+    conEl.innerHTML = "";
+    return;
+  }
+  const first = sentences[0];
+
+  try { depEl.innerHTML = buildArcSVG(first.tokens); }
+  catch { depEl.innerHTML = '<div class="tree-msg err">Could not draw the dependency tree.</div>'; }
+
+  try {
+    const res = await fetch("/taru/parse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sentence: first.text, surprisal: false }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "parse failed");
+    const treeStr = (Array.isArray(data) ? data[0] : data).tree;
+    if (!treeStr) throw new Error("no tree returned");
+    conEl.innerHTML = "";
+    conEl.appendChild(buildConstituencySVG(parseTree(treeStr)));
+  } catch (e) {
+    conEl.innerHTML = `<div class="tree-msg err">Constituency tree unavailable (${esc(e.message)}). The Berkeley parser (Java) may not be available here.</div>`;
+  }
+}
+
+// ── Per-tree expand overlay ──────────────────────────────────────────────────
+document.getElementById("trees").addEventListener("click", e => {
+  const btn = e.target.closest(".tree-expand");
+  if (btn) openTreeOverlay(btn.dataset.tree);
+});
+document.getElementById("tree-overlay-close").addEventListener("click", closeTreeOverlay);
+document.getElementById("tree-overlay").addEventListener("click", e => {
+  if (e.target.id === "tree-overlay") closeTreeOverlay();
+});
+
+function openTreeOverlay(which) {
+  const src = document.getElementById(which === "dep" ? "dep-tree" : "con-tree");
+  const svg = src.querySelector("svg");
+  const body = document.getElementById("tree-overlay-body");
+  body.innerHTML = "";
+  document.getElementById("tree-overlay-title").textContent =
+    which === "dep" ? "Dependency tree" : "Constituency tree";
+  if (svg) {
+    const clone = svg.cloneNode(true);
+    const w = parseFloat(svg.getAttribute("width")) || 0;
+    const h = parseFloat(svg.getAttribute("height")) || 0;
+    if (w && h) { clone.setAttribute("width", w * 1.6); clone.setAttribute("height", h * 1.6); }
+    body.appendChild(clone);
+  } else {
+    body.innerHTML = '<div class="tree-msg">No tree to show.</div>';
+  }
+  document.getElementById("tree-overlay").classList.remove("hidden");
+}
+function closeTreeOverlay() {
+  document.getElementById("tree-overlay").classList.add("hidden");
+  document.getElementById("tree-overlay-body").innerHTML = "";
 }
 </script>
 </body>

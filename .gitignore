@@ -18,6 +18,10 @@ test_sentences.txt
 # Large corpus (kept local; HDTB corpus is committed)
 fact_media_news_ISCNLP.conllu
 
+# Large model artifacts for the scoring/ plugins (kept local; baked into the
+# Docker image via COPY). trigram.pkl alone is 226 MB > GitHub's 100 MB limit.
+scoring/models/
+
 # Web app runtime artifacts
 webapp/outputs/
 taru/workspace/genmodel/custom/

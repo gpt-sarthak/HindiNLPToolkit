@@ -1,5 +1,7 @@
 .git
 .venv
+venv
+webapp/outputs
 __pycache__
 *.pyc
 *.log

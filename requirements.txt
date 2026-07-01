@@ -5,3 +5,8 @@ stanza>=1.7
 fastapi>=0.110
 uvicorn>=0.29
 python-multipart>=0.0.9
+# Model scorers (scoring/): torch for the LSTM models, nltk to unpickle the
+# trigram MLE. torch is also pulled in transitively by stanza and installed
+# CPU-only in the Dockerfile, so this adds no new install there.
+torch>=2.0
+nltk>=3.8
