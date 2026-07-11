@@ -17,12 +17,16 @@ load_txt(filepath)     -> List[TokenList]   parse a .txt file (one sentence per 
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Lock
 from typing import Any, Dict, List
 
 from conllu import parse, TokenList
 
-# Module-level cache — pipeline is loaded once per Python session.
+# Module-level cache — pipeline is loaded once per Python session.  The lock
+# stops concurrent callers (webapp job workers, the startup warm-up thread)
+# from each building their own ~1 GB pipeline.
 _stanza_pipeline_cache: Dict[str, Any] = {}
+_stanza_lock = Lock()
 
 
 def _get_stanza_pipeline(lang: str = "hi") -> Any:
@@ -31,19 +35,21 @@ def _get_stanza_pipeline(lang: str = "hi") -> Any:
     use.  Raises ImportError if the stanza package is not installed.
     """
     if lang not in _stanza_pipeline_cache:
-        try:
-            import stanza  # noqa: PLC0415
-        except ImportError as exc:
-            raise ImportError(
-                "stanza is required to parse raw text or .txt files.\n"
-                "Install it with:  pip install stanza"
-            ) from exc
-        stanza.download(lang, verbose=False)
-        _stanza_pipeline_cache[lang] = stanza.Pipeline(
-            lang,
-            processors="tokenize,pos,lemma,depparse",
-            verbose=False,
-        )
+        with _stanza_lock:
+            if lang not in _stanza_pipeline_cache:
+                try:
+                    import stanza  # noqa: PLC0415
+                except ImportError as exc:
+                    raise ImportError(
+                        "stanza is required to parse raw text or .txt files.\n"
+                        "Install it with:  pip install stanza"
+                    ) from exc
+                stanza.download(lang, verbose=False)
+                _stanza_pipeline_cache[lang] = stanza.Pipeline(
+                    lang,
+                    processors="tokenize,pos,lemma,depparse",
+                    verbose=False,
+                )
     return _stanza_pipeline_cache[lang]
 
 

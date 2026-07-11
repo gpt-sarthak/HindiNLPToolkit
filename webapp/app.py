@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -23,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from webapp import jobs
 from webapp.pipeline import run_job
+from webapp.warmup import start_background_warmup
 
 ALLOWED_SUFFIXES = {".txt", ".conllu"}
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # generous enough for a full treebank
@@ -38,10 +40,19 @@ MEDIA_TYPES = {
     ".conllu": "text/plain; charset=utf-8",
 }
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Pre-warm Stanza + LSTM + trigram on a background thread so the first
+    # user job is fast (opt out with HNT_NO_PREWARM=1) — see webapp/warmup.py.
+    start_background_warmup()
+    yield
+
+
 app = FastAPI(
     title="Hindi NLP Toolkit",
     description="Filter Hindi sentences and generate preverbal constituent "
     "order variants. Upload .conllu or .txt, download results per stage.",
+    lifespan=_lifespan,
 )
 
 
@@ -72,6 +83,7 @@ async def create_job(
     max_variants: int = Form(99),
     root_pos: str = Form("paninian"),
     scorers: str = Form(""),
+    evaluate: bool = Form(False),
 ) -> dict:
     """
     Start a pipeline job from either an uploaded corpus *or* typed sentences.
@@ -83,6 +95,10 @@ async def create_job(
         sentence still yields variants. An optional ``context_text`` (the
         preceding sentence) feeds the context-aware scorers; without it, scorers
         that need a preceding sentence (``needs_previous_sentence``) are skipped.
+
+    ``evaluate`` (File mode only) appends a pairwise ranking-accuracy stage
+    over the scorers' delta columns; it is forced off for typed text, where a
+    single sentence cannot yield enough pairs.
 
     Returns the job id.
     """
@@ -115,6 +131,7 @@ async def create_job(
         # still permutes. Collapse stray whitespace/line breaks into one line.
         scheme = "ud"
         grammar_filter = False
+        evaluate = False  # one sentence can never reach the pair threshold
         target = " ".join(text.split())
         input_path = jobs.job_dir(job.job_id) / "input.txt"
         input_path.write_text(target, encoding="utf-8")
@@ -146,6 +163,7 @@ async def create_job(
         "max_variants": max_variants,
         "grammar_filter": grammar_filter,
         "scorers": scorer_names,
+        "evaluate": evaluate,
         "context_text": context_sentence if has_text else "",
     }
     jobs.submit(job, run_job, job, input_path, options)

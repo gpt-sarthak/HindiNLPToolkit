@@ -14,6 +14,33 @@ from pathlib import Path
 
 from webapp import jobs
 
+# Below this many (reference, variant) pairs, ranking accuracy is too noisy to
+# show — evaluation.json then carries status "insufficient_pairs" instead.
+MIN_EVAL_PAIRS = 200
+
+
+def _evaluation_payload(pairs_df) -> dict:
+    """Ranking-accuracy result for evaluation.json, or a status stub when the
+    pairs table cannot support one (no scorer deltas / too few pairs)."""
+    delta_cols = [c for c in pairs_df.columns if c.startswith("Delta_")]
+    base = {"n_pairs": int(len(pairs_df)), "min_pairs": MIN_EVAL_PAIRS}
+    if not delta_cols:
+        return {"status": "no_predictors", **base}
+    if len(pairs_df) < MIN_EVAL_PAIRS:
+        return {"status": "insufficient_pairs", **base}
+
+    from evaluation import evaluate_pairs
+    from scoring import get_scorers
+
+    # Present each delta under the name of the scorer that declared it.
+    labels = {
+        col: scorer.name
+        for scorer in get_scorers().values()
+        for (col, _ref_fn, _var_fn) in scorer.deltas()
+    }
+    result = evaluate_pairs(pairs_df, deltas=delta_cols, labels=labels)
+    return {"status": "ok", "min_pairs": MIN_EVAL_PAIRS, **result}
+
 
 def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
     """
@@ -29,6 +56,9 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
                        uploads where the observed set is too sparse to allow
                        any reordering)
     scorers          : list[str] of scorer names to apply to the pairs table
+    evaluate         : bool — when True, run the pairwise ranking-accuracy
+                       evaluation over the scorers' Delta_* columns and write
+                       evaluation.json (needs >= MIN_EVAL_PAIRS pairs)
     context_text     : optional preceding sentence (Sentence mode) parsed and
                        prepended to the scoring corpus so context-aware scorers
                        can see a predecessor; never filtered or permuted
@@ -116,5 +146,15 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
         pairs_df = apply_scorers(pairs_df, scorer_names, context=context)
     pairs_df.to_csv(out / "variants.csv", index=False, encoding="utf-8")
     job.artifacts.append("variants.csv")
+
+    # Optional ranking-accuracy evaluation over the scorers' Delta_* columns
+    # (File mode opt-in; still part of the "variants" stage for the UI).
+    if options.get("evaluate"):
+        payload = _evaluation_payload(pairs_df)
+        (out / "evaluation.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, default=float),
+            encoding="utf-8",
+        )
+        job.artifacts.append("evaluation.json")
 
     job.stage = "complete"

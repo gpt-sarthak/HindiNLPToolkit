@@ -10,3 +10,5 @@ python-multipart>=0.0.9
 # CPU-only in the Dockerfile, so this adds no new install there.
 torch>=2.0
 nltk>=3.8
+# Evaluation (evaluation/): pairwise ranking accuracy over scorer deltas.
+scikit-learn>=1.3
