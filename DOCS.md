@@ -548,8 +548,10 @@ Open `http://localhost:8000` (interactive API docs at `/docs`).
     line, also parsed with Stanza). Uses the selected scheme and the grammar
     filter **on** (see below).
 - **Options**: max variants per sentence, annotation scheme preset (Paninian /
-  UD root POS, File mode only), and which cognitive scorers to run. (Min
-  preverbal phrases is fixed internally at 2.)
+  UD root POS, File mode only), which cognitive scorers to run, and — File mode
+  only — **Evaluate predictor accuracy** (pairwise ranking accuracy over the
+  ticked scorers' deltas; see the Evaluation section below). (Min preverbal
+  phrases is fixed internally at 2.)
 - **Grammar filter**: on for File mode, off for Sentence mode. When on, only
   reorderings whose adjacent deprel bigrams occur in the corpus are kept (the
   library's standard behaviour); for small corpora (roughly < 100 sentences)
@@ -557,9 +559,16 @@ Open `http://localhost:8000` (interactive API docs at `/docs`).
   which is why typed input turns it off.
 - **Downloads per stage** (available as soon as each stage finishes):
   `parsed.conllu` (only for `.txt` input), `passed_sentences.csv`,
-  `rejected_sentences.csv`, `summary.json`, and `variants.csv`
-  (reference/variant pairs with `Sent_ID`/`Variant_ID` plus scorer columns).
+  `rejected_sentences.csv`, `summary.json`, `variants.csv`
+  (reference/variant pairs with `Sent_ID`/`Variant_ID` plus scorer columns),
+  and `evaluation.json` (only when *Evaluate predictor accuracy* was ticked).
 - Jobs run on a 2-worker queue; results expire after one hour.
+- **Startup pre-warm**: the server loads the heavy models (Stanza, then the
+  LSTM, then the large trigram model) on a background thread at startup, so
+  the first job is fast; a job submitted while warming is still correct — it
+  simply loads whatever it needs itself. Set `HNT_NO_PREWARM=1` before
+  starting to skip warming (lighter local dev server; the first job then pays
+  the model loading cost, which can be minutes for the trigram scorer).
 
 ### Adding a scorer (group members)
 
@@ -904,3 +913,78 @@ missing, Java is unavailable, or a sentence is unparseable, that score is `NaN`.
 > them in `scoring/models/` for local runs. All loading is deferred to first use,
 > so plugin discovery and the rest of the pipeline are unaffected when a scorer
 > is not selected.
+
+## Evaluation (`evaluation/`)
+
+Pairwise ranking evaluation of the scorers' delta features: how often does a
+feature — alone, and all features combined — pick the human-written ordering
+over the reordered variant?
+
+The pairs table from `apply_scorers` is already the balanced pairwise dataset
+of Joachims (2002): `ML_Label` alternates 1/0 and every `Delta_<name>` column
+is oriented *first − second* by the central diff step. Evaluation is therefore
+a direct classification task — predict `ML_Label` from the deltas — and the
+defaults reproduce the study this toolkit derives from (Ranjan & van Schijndel
+2024): 10-fold cross-validation (shuffled, seed 42), z-scoring fit on each
+training fold only, an lbfgs logistic regression, accuracy pooled over the
+out-of-fold predictions. Chance is 50%.
+
+### `evaluate_pairs(pairs_df, deltas=None, folds=10, seed=42, labels=None, group_by_sentence=False)`
+
+```python
+from evaluation import evaluate_pairs
+
+result = evaluate_pairs(pairs_df)                    # every Delta_* column
+result = evaluate_pairs(pairs_df, deltas=["Delta_DL", "Delta_Trigram"])
+```
+
+| Parameter | Description |
+|---|---|
+| `pairs_df` | `apply_scorers` output with `ML_Label` + `Delta_*` columns |
+| `deltas` | delta columns to evaluate; `None` = auto-detect every `Delta_*` |
+| `folds` / `seed` | CV folds and shuffle seed (paper defaults: 10 / 42) |
+| `labels` | optional `{delta_column: display_name}` echoed into the result |
+| `group_by_sentence` | `True` = GroupKFold on `Sent_ID` (stricter: no sentence on both sides of a fold); default `False` matches the paper |
+
+Returns a dict (accuracies as 0–1 fractions):
+
+```python
+{
+  "n_pairs": 3000, "folds": 10, "seed": 42,
+  "predictors": [                      # one per delta, sorted by accuracy desc
+    {"delta": "Delta_DL", "label": "dependency_length", "n": 3000,
+     "accuracy": 0.61, "ci_low": 0.59, "ci_high": 0.63,
+     "coefficient": -0.42,
+     "direction": "reference preferred when this value is lower"},
+    ...
+  ],
+  "combined": {                        # all deltas in one model; None if < 2
+    "deltas": [...], "n": ..., "accuracy": ..., "ci_low": ..., "ci_high": ...,
+    "coefficients": {"Delta_DL": -0.40, ...}
+  }
+}
+```
+
+Per predictor, rows with a missing (`NaN`) delta are dropped for that predictor
+only (`n` reports what remained); the combined model uses rows complete across
+all included deltas. Coefficients come from an effectively unregularised fit on
+the full z-scored data; the *sign* is the reliable part — negative means the
+reference is preferred when that feature's value is lower (expected for
+surprisals and dependency length). The 95% CI is a normal-approximation
+binomial interval. Raises `ValueError` when `ML_Label`/deltas are missing or a
+predictor has fewer usable rows than folds.
+
+**Every scorer that declares `deltas()` is automatically a predictor** — there
+is nothing extra to implement when adding a scorer.
+
+### In the web app
+
+Tick **Evaluate predictor accuracy** (File mode only; Sentence mode never
+evaluates — one sentence cannot yield enough pairs). The job then writes an
+`evaluation.json` artifact and the UI renders a *Ranking accuracy* card:
+combined model first, then each predictor with its accuracy, ±CI, pair count,
+a bar anchored at the 50% chance line, and the coefficient's plain-English
+direction. Fewer than **200 pairs** (or no scorer deltas) produces a
+`status: "insufficient_pairs"` / `"no_predictors"` stub and an explanatory
+note instead of numbers — the threshold lives in `webapp/pipeline.py`
+(`MIN_EVAL_PAIRS`), not in the library.

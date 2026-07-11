@@ -111,6 +111,13 @@ Rules — **do not break these:**
   Delta_<name> = var - ref   if ML_Label == 0   (variant shown first)
   ```
 
+- **Your delta is automatically an evaluation predictor.** The `evaluation/`
+  package (and the web app's *Evaluate predictor accuracy* option) measures how
+  often each `Delta_<name>` picks the human-written order over the variant
+  (10-fold CV ranking accuracy; chance = 50%). Declaring `deltas()` is all it
+  takes — your scorer shows up in the *Ranking accuracy* results with nothing
+  extra to implement.
+
 Read these before you start: `scoring/example_scorer.py` (copy-paste template),
 `scoring/dl_scorer.py` and `scoring/is_scorer.py` (the two built-in scorers).
 
