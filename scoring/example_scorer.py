@@ -38,6 +38,11 @@ Example
         trained_on = "Not trained (deterministic)"
         built_with = "Describe the model/method/paper used to build this."
         notes = "Anything else worth stating (smoothing, units, caveats)."
+        # Optional: direction of the raw score, keyed by delta name — lets this
+        # scorer vote in Sentence-mode word-order recommendations. True = higher
+        # raw score is more natural (log-likelihood, givenness); False = lower
+        # is (surprisal, dependency length). Omit to stay out of recommendations.
+        higher_is_more_natural = {"Delta_My": False}
 
         def score(self, pairs_df):
             df = pairs_df.copy()

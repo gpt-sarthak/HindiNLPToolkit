@@ -50,6 +50,8 @@ app) across concurrent jobs.
 
 from __future__ import annotations
 
+from typing import Dict
+
 import pandas as pd
 
 
@@ -74,6 +76,13 @@ class Scorer:
         to be meaningful (e.g. adaptation on context, or givenness vs. the prior
         sentence).  The web app skips such scorers in single-sentence runs when
         no context sentence is supplied.
+
+    higher_is_more_natural : maps a delta column name (the same key declared in
+        ``deltas``) to the direction of its *raw* score: True when a higher
+        value marks the more natural word order (e.g. a log-likelihood or a
+        givenness score), False when a lower value does (e.g. a surprisal or a
+        dependency length).  Consumed by ``scoring.recommend`` to rank candidate
+        word orders; deltas absent from the map don't vote in recommendations.
     """
 
     name: str = ""
@@ -82,6 +91,7 @@ class Scorer:
     built_with: str = ""
     notes: str = ""
     needs_previous_sentence: bool = False
+    higher_is_more_natural: Dict[str, bool] = {}
 
     def score(self, pairs_df: pd.DataFrame) -> pd.DataFrame:
         """

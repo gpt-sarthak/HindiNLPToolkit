@@ -32,6 +32,13 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
+# --- pre-bake the Stanza Hindi model into the image ---
+# Otherwise stanza.download('hi') runs on the first .txt/Sentence-mode parse
+# (~1 GB fetched to ~/stanza_resources), making cold start slow and network-
+# dependent. Baking it in keeps startup fast and offline. Cached across app
+# edits (own layer). Set HNT_NO_PREWARM=1 at runtime to skip warm-up, not this.
+RUN python -c "import stanza; stanza.download('hi', verbose=False)"
+
 # --- compile the Taru C++ engine for Linux ---
 # Only the taru/ tree is needed to build, so copying it on its own keeps this
 # (slow-ish) compile cached unless the C++ sources actually change.

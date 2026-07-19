@@ -241,6 +241,18 @@
   .acc-bar i { display: block; position: absolute; top: 0; height: 100%; background: var(--vermilion); }
   .acc-bar .chance { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; background: var(--ink-soft); }
 
+  /* Recommended word order card (Sentence mode) */
+  .rec-pick { border: 1.5px solid var(--line); border-left: 4px solid var(--vermilion); background: var(--paper); padding: 0.8rem 0.9rem; margin-bottom: 1rem; }
+  .rec-pick.ref { border-left-color: var(--green); }
+  .rec-badge { display: inline-block; font-family: var(--mono); font-size: 0.64rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #fff; background: var(--vermilion); padding: 0.14rem 0.5rem; border-radius: 999px; margin-bottom: 0.45rem; }
+  .rec-pick.ref .rec-badge { background: var(--green); }
+  .rec-sentence { font-family: var(--sans); font-size: 1.05rem; line-height: 1.6; }
+  .rec-table-wrap { overflow-x: auto; }
+  table.eval td.rec-sent { min-width: 15rem; }
+  table.eval tr.rec-best td { font-weight: 600; background: #f4efe2; }
+  .rec-tag { font-family: var(--mono); font-size: 0.62rem; color: var(--ink-soft); border: 1px solid var(--line); border-radius: 999px; padding: 0.05rem 0.4rem; margin-left: 0.35rem; white-space: nowrap; }
+  .rec-subhead { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-soft); margin: 0.8rem 0 0.4rem; }
+
   footer { margin-top: 2.6rem; font-family: var(--mono); font-size: 0.7rem; color: var(--ink-soft); text-align: center; }
   footer a { color: var(--vermilion-deep); }
 
@@ -408,9 +420,15 @@
         </div>
         <p class="error-note hidden" id="error-note"></p>
       </div>
-      
-      <div class="card hidden" id="summary-card" style="animation-delay:0.18s">
-        <h2><span class="num">03</span> Filter summary</h2>
+
+      <div class="card hidden" id="recommend-card" style="animation-delay:0.18s">
+        <h2><span class="num">03</span> Recommended word order</h2>
+        <p class="eval-note">The most natural order among your sentence and its variants: each ticked scorer's raw scores are compared across all candidates (↓ lower = more natural, ↑ higher = more natural) and combined with corpus-trained weights.</p>
+        <div id="recommend-body"></div>
+      </div>
+
+      <div class="card hidden" id="summary-card" style="animation-delay:0.21s">
+        <h2><span class="num">04</span> Filter summary</h2>
         <div class="stats" id="stats"></div>
         <table class="filters">
           <thead><tr><th>Filter</th><th style="text-align:right">Rejected</th><th style="width:38%"></th></tr></thead>
@@ -418,14 +436,14 @@
         </table>
       </div>
 
-      <div class="card hidden" id="eval-card" style="animation-delay:0.21s">
-        <h2><span class="num">04</span> Ranking accuracy</h2>
+      <div class="card hidden" id="eval-card" style="animation-delay:0.24s">
+        <h2><span class="num">05</span> Ranking accuracy</h2>
         <p class="eval-note">How often a model using only this feature picks the human-written order over the reordered variant (50% = chance).</p>
         <div id="eval-body"></div>
       </div>
 
-      <div class="card" id="taru-card" style="animation-delay:0.24s">
-        <h2><span class="num">05</span> Syntactic Tree &amp; Surprisal toolkit</h2>
+      <div class="card" id="taru-card" style="animation-delay:0.27s">
+        <h2><span class="num">06</span> Syntactic Tree &amp; Surprisal toolkit</h2>
         <p class="idle-note">Parse Hindi into constituency trees and per-word surprisal with the toolkit — the same HDTB backend the <code>surprisal</code> scorer calls. Open it as its own page; nothing leaves this server.</p>
         <div class="downloads" style="margin-top:0.8rem">
           <a class="dl" id="taru-open" href="/taru" target="_blank" rel="noopener" style="text-decoration:none">Open Tree &amp; Surprisal →</a>
@@ -456,6 +474,7 @@ const ARTIFACT_STAGE = {
   "summary.json": "filter",
   "variants.csv": "variants",
   "evaluation.json": "variants",
+  "recommendation.json": "variants",
 };
 const ARTIFACT_LABEL = {
   "parsed.conllu": "parsed.conllu",
@@ -464,6 +483,7 @@ const ARTIFACT_LABEL = {
   "summary.json": "summary.json",
   "variants.csv": "variants.csv",
   "evaluation.json": "evaluation.json",
+  "recommendation.json": "recommendation.json",
 };
 const STAGE_ORDER = ["parse", "filter", "variants"];
 
@@ -482,6 +502,7 @@ let inputMode = "sentence";  // "sentence" | "file"
 let pollTimer = null;
 let treesRenderedFor = null;  // jobId whose trees are already drawn
 let evalRenderedFor = null;   // jobId whose ranking-accuracy card is drawn
+let recRenderedFor = null;    // jobId whose recommended-order card is drawn
 
 // ── Scorer checkboxes from the plugin registry ──────────────
 fetch("/api/plugins").then(r => r.json()).then(plugins => {
@@ -676,10 +697,12 @@ function resetResults() {
   document.getElementById("error-note").classList.add("hidden");
   document.getElementById("summary-card").classList.add("hidden");
   document.getElementById("eval-card").classList.add("hidden");
+  document.getElementById("recommend-card").classList.add("hidden");
   document.getElementById("download-all").classList.add("hidden");
   document.getElementById("trees").classList.add("hidden");
   treesRenderedFor = null;
   evalRenderedFor = null;
+  recRenderedFor = null;
   for (const el of document.querySelectorAll(".stage")) {
     el.className = "stage";
     el.querySelector(".stage-state").textContent = "pending";
@@ -767,6 +790,78 @@ function render(job, jobId) {
       .then(renderEvaluation)
       .catch(() => { evalRenderedFor = null; });
   }
+
+  // Recommended-order card, once, when the recommendation artifact is ready.
+  if (job.artifacts.includes("recommendation.json") && recRenderedFor !== jobId) {
+    recRenderedFor = jobId;
+    fetch(`/api/jobs/${jobId}/files/recommendation.json`)
+      .then(r => r.json())
+      .then(renderRecommendation)
+      .catch(() => { recRenderedFor = null; });
+  }
+}
+
+function renderRecommendation(rec) {
+  const card = document.getElementById("recommend-card");
+  const body = document.getElementById("recommend-body");
+  card.classList.remove("hidden");
+  body.innerHTML = "";
+
+  if (rec.status !== "ok") {
+    const note = document.createElement("p");
+    note.className = "idle-note";
+    note.textContent = rec.status === "no_scorers"
+      ? "No rankable scorer features — tick at least one scorer and run again."
+      : "No variants were generated for this sentence, so there is nothing to rank.";
+    body.appendChild(note);
+    return;
+  }
+
+  const fmt = v => v == null ? "—" : (Number.isInteger(v) ? String(v) : v.toFixed(2));
+
+  for (const sent of rec.sentences) {
+    if (rec.sentences.length > 1) {
+      const h = document.createElement("p");
+      h.className = "rec-subhead";
+      h.textContent = sent.sent_id;
+      body.appendChild(h);
+    }
+
+    // Headline: the winning word order.
+    if (sent.recommended) {
+      const pick = document.createElement("div");
+      pick.className = "rec-pick" + (sent.recommended.is_reference ? " ref" : "");
+      pick.innerHTML = `<span class="rec-badge">${sent.recommended.is_reference
+          ? "your original order" : "reordered variant"}</span>
+        <div class="rec-sentence">${esc(sent.recommended.sentence)}</div>`;
+      body.appendChild(pick);
+    }
+
+    // All candidates, best first (raw feature values + combined score).
+    const wrap = document.createElement("div");
+    wrap.className = "rec-table-wrap";
+    const table = document.createElement("table");
+    table.className = "eval";
+    const headCells = rec.features.map(f =>
+      `<th title="${esc(f.scorer)}">${esc(f.delta.replace(/^Delta_/, ""))} ${f.higher_is_more_natural ? "↑" : "↓"}</th>`
+    ).join("");
+    table.innerHTML = `<thead><tr><th>Word order</th>${headCells}<th style="text-align:right">Score</th></tr></thead>`;
+    const tbody = document.createElement("tbody");
+    const bestId = sent.recommended ? sent.recommended.id : null;
+    const ranked = [...sent.candidates].sort((a, b) =>
+      (b.score == null ? -Infinity : b.score) - (a.score == null ? -Infinity : a.score));
+    for (const c of ranked) {
+      const tr = document.createElement("tr");
+      if (c.id === bestId) tr.className = "rec-best";
+      const cells = rec.features.map(f => `<td class="n">${fmt(c.values[f.delta])}</td>`).join("");
+      tr.innerHTML = `<td class="rec-sent">${esc(c.sentence)}${c.is_reference
+          ? '<span class="rec-tag">reference</span>' : ""}</td>${cells}<td class="n">${fmt(c.score)}</td>`;
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    body.appendChild(wrap);
+  }
 }
 
 function renderEvaluation(ev) {
@@ -830,7 +925,7 @@ function renderSummary(s) {
     [s.total_passed, "passed", true],
     [s.total_rejected, "rejected"],
     [(s.pass_rate * 100).toFixed(1) + "%", "pass rate", true],
-    [s.avg_phrase_count, "avg phrases"],
+    [s.avg_constituent_count, "avg constituents"],
   ];
   for (const [v, k, accent] of items) {
     const d = document.createElement("div");

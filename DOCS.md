@@ -137,7 +137,7 @@ in order — no logic is duplicated.
 | `Sent_ID` | Sentence identifier from CoNLL-U metadata |
 | `Sentence` | Surface text |
 | `Root_ID` | Token ID of the verbal root |
-| `Phrase_Count` | Number of preverbal constituents |
+| `Constituent_Count` | Number of preverbal constituents |
 | `Character_Length` | Character count of surface text |
 | `Sentence_Length` | Token count (integer IDs only) |
 | `Constituent_Lengths` | List of token counts per constituent |
@@ -158,7 +158,7 @@ passed, rejected_df, passed_df = filter_sentences(
     output_dir="output/",
 )
 
-# Require at least 3 preverbal phrases
+# Require at least 3 preverbal constituents
 passed, rejected_df, passed_df = filter_sentences(sents, min_phrases=3)
 ```
 
@@ -278,7 +278,7 @@ Each dict in the passed list has:
 - `constituents` — `List[List[Dict]]`, one sub-list per preverbal constituent
 
 The `Reason` field in the rejection DataFrame includes the actual POS found,
-e.g. `"Bad Root: Root POS is 'NN', expected VERB/AUX/VM/VAUX"`.
+e.g. `"Non-verbal root: Root POS is 'NN', expected VERB/AUX/VM/VAUX"`.
 
 ```python
 passed, rej = filter_bad_root(sentences)
@@ -475,11 +475,11 @@ summary = summarize(passed, rejected_df)
 | `rejection_counts` | dict | `{reason: count}` for every rejection reason string |
 | `filter_order` | list | `[{filter, rejected}, …]` — one entry per filter stage in pipeline order (7 entries total) |
 | `avg_sentence_length` | float | Mean token count of passed sentences |
-| `avg_phrase_count` | float | Mean preverbal constituent count of passed sentences |
-| `phrase_count_distribution` | dict | `{n_phrases: sentence_count}` |
+| `avg_constituent_count` | float | Mean preverbal constituent count of passed sentences |
+| `constituent_count_distribution` | dict | `{n_constituents: sentence_count}` |
 
-The `filter_order` list groups all `"Bad Root: …"` variants under a single
-`"Bad Root"` entry so each stage is represented exactly once regardless of how
+The `filter_order` list groups all `"Non-verbal root: …"` variants under a single
+`"Non-verbal root"` entry so each stage is represented exactly once regardless of how
 many distinct POS tags triggered it.
 
 ---
@@ -530,7 +530,10 @@ It only *imports* the logic packages — no NLP code lives in `webapp/`.
 python -m uvicorn webapp.app:app --host 0.0.0.0 --port 8000
 ```
 
-Open `http://localhost:8000` (interactive API docs at `/docs`).
+Open `http://localhost:8000` (interactive API docs at `/docs`). A hand-written
+guide to the pipeline, scores, and Delta/evaluation/recommendation semantics is
+served at `/how-it-works` — intentionally not linked from the UI, and static
+(update `webapp/static/how-it-works.html` by hand when behavior changes).
 
 - **Input** (two modes, toggled on the page; **Sentence** is the default):
   - *Sentence* — type **one** Hindi sentence into the text box (parsed with
@@ -543,7 +546,9 @@ Open `http://localhost:8000` (interactive API docs at `/docs`).
     After the run, the target sentence's **dependency tree** (from the Stanza
     parse) and **constituency tree** (from the Berkeley parser via `/taru/parse`)
     render inline, each with an expand control. The first typed run downloads the
-    Stanza Hindi model (slow once).
+    Stanza Hindi model (slow once). Sentence mode also picks the **most natural
+    word order** among the typed sentence and its variants and shows it in a
+    *Recommended word order* card (see the Recommendation section below).
   - *File* — one `.conllu` or `.txt` upload (`.txt` = one Hindi sentence per
     line, also parsed with Stanza). Uses the selected scheme and the grammar
     filter **on** (see below).
@@ -561,7 +566,9 @@ Open `http://localhost:8000` (interactive API docs at `/docs`).
   `parsed.conllu` (only for `.txt` input), `passed_sentences.csv`,
   `rejected_sentences.csv`, `summary.json`, `variants.csv`
   (reference/variant pairs with `Sent_ID`/`Variant_ID` plus scorer columns),
-  and `evaluation.json` (only when *Evaluate predictor accuracy* was ticked).
+  `evaluation.json` (only when *Evaluate predictor accuracy* was ticked), and
+  `recommendation.json` (Sentence mode — the recommended word order and the
+  full candidate ranking).
 - Jobs run on a 2-worker queue; results expire after one hour.
 - **Startup pre-warm**: the server loads the heavy models (Stanza, then the
   LSTM, then the large trigram model) on a background thread at startup, so
@@ -600,6 +607,16 @@ The web app discovers it automatically on restart. `pairs_df` is the
 Reference_Sentence | Variant_Sentence`); add columns, never drop or reorder
 rows. Emit raw `*_Reference` / `*_Variant` (true-role) scores and declare the
 diff via `deltas()` — don't compute it yourself.
+
+Optionally declare the *direction* of your raw score so the scorer can also
+vote in Sentence-mode word-order recommendations (see the Recommendation
+section):
+
+```python
+    # True = higher raw score marks the more natural order (log-likelihood,
+    # givenness); False = lower does (surprisal, dependency length).
+    higher_is_more_natural = {"Delta_My": False}
+```
 
 See `scoring/example_scorer.py` for a copy-paste template, and
 `scoring/dl_scorer.py` / `scoring/is_scorer.py` for the two built-in scorers.
@@ -913,6 +930,97 @@ missing, Java is unavailable, or a sentence is unparseable, that score is `NaN`.
 > them in `scoring/models/` for local runs. All loading is deferred to first use,
 > so plugin discovery and the rest of the pipeline are unaffected when a scorer
 > is not selected.
+
+## Recommendation (`scoring/recommend.py`)
+
+Picks the **most natural word order** among a sentence's candidates — the
+reference plus every generated variant — from the raw true-role scores the
+selected scorers already computed. This powers the web app's *Recommended word
+order* card (Sentence mode).
+
+### `recommend_order(pairs_df, names)`
+
+```python
+from scoring import recommend_order
+
+result = recommend_order(scored_df, ["dependency_length", "lstm"])
+```
+
+| Parameter | Description |
+|---|---|
+| `pairs_df` | the scored pairs table (`generate_variants` + `apply_scorers` output) |
+| `names` | scorer names whose features should vote (same list given to `apply_scorers`); unknown names raise `KeyError` |
+
+How it ranks (per `Sent_ID`):
+
+1. Each scorer's `deltas()` extractors read the raw reference/variant scores
+   straight off the table — nothing is recomputed.
+2. Only deltas with a declared direction (`Scorer.higher_is_more_natural`) vote;
+   scorers without the declaration are simply skipped.
+3. Per feature, candidate scores are z-scored *locally* (across that sentence's
+   candidates) and oriented so higher always means "more natural". A feature
+   with no spread, or fewer than 2 finite values, contributes nothing.
+4. A candidate's combined score is the **weighted mean** of its oriented
+   z-scores. Weights are corpus-trained standardized logistic-regression
+   coefficients (see below); all seven built-ins ship a fitted weight, and any
+   feature without one falls back to voting with 1.0.
+5. The top score wins; exact ties go to the reference. Candidates with no
+   usable feature value (e.g. a missing model) score `null`.
+
+Returns a JSON-serializable dict:
+
+```python
+{
+  "features":  [{"delta": "Delta_DL", "scorer": "dependency_length",
+                 "higher_is_more_natural": False, "weight": 0.6377}, ...],
+  "sentences": [{"sent_id": "s1",
+                 "recommended": {"id": "s1_v2", "sentence": "...",
+                                 "is_reference": False, "score": 1.37},
+                 "candidates": [{"id": "reference", "sentence": "...",
+                                 "is_reference": True,
+                                 "values": {"Delta_DL": 10.0, ...},
+                                 "score": -0.39}, ...]}]   # reference first
+}
+```
+
+### Pretrained weights (`scoring/models/recommender_weights.json`)
+
+A model cannot be fit on one sentence's few unlabeled candidates — so the
+feature weights are fitted **offline on a corpus** and fixed. Because the
+pairwise logistic regression in `evaluation/` is linear
+(`P(A over B) = σ(w·(f(A)−f(B)))`), its coefficients rank single candidates
+directly (`s(c) = w·f(c)`, the Joachims pairwise trick). Only the coefficient
+*magnitude* is used; the sign always comes from the scorer's declared
+`higher_is_more_natural`, so a noisy fit can never flip a theory-verified direction.
+
+Regenerate (or extend to more scorers) with:
+
+```powershell
+python -m evaluation.fit_weights                     # DL + IS on UD HDTB (defaults)
+python -m evaluation.fit_weights --scorers dependency_length,information_status,lstm
+```
+
+The shipped file carries fitted weights for **all seven** built-in scorers
+(magnitude = each feature's standalone accuracy at ranking the attested order):
+`Delta_DL` 0.638 (61.7%), `Delta_Trigram` 1.882 (77.1%), `Delta_LSTM` 1.820
+(77.5%), `Delta_Adaptive` 1.822 (77.4%), `Delta_PCFG` 0.896 (63.4%),
+`Delta_Surprisal` 0.872 (59.4%), `Delta_IS` 0.306 (53.1%). Provenance is mixed:
+`Delta_DL` from the full-corpus fit on the committed `hi_hdtb-ud-train.conllu`
+(193,474 pairs); the other six from the Ranjan & van Schijndel research
+`features.csv` (92,299 HDTB pairs, same models as our scorers), with
+`Delta_Surprisal` computed on those surfaces via Taru synproc. It is the one
+file in `scoring/models/` that **is** committed (tiny and deterministic). A
+missing file (or a future scorer with no fitted weight) just falls back to
+weight 1.0.
+
+### In the web app
+
+Sentence mode always writes a `recommendation.json` artifact (`status`
+`"ok"` / `"no_scorers"` / `"no_pairs"`) and renders the *Recommended word
+order* card: the winning order with a badge ("your original order" vs
+"reordered variant") and the full candidate table — one column per feature
+(↓/↑ = direction), best first, winner highlighted. File mode never writes it
+(use *Evaluate predictor accuracy* there instead).
 
 ## Evaluation (`evaluation/`)
 

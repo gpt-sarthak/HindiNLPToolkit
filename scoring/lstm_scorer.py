@@ -30,6 +30,7 @@ class LSTMScorer(Scorer):
     )
     trained_on = "Hindi Wikipedia"
     built_with = "2-layer LSTM language model (embed 256 -> LSTM 256, dropout 0.3)"
+    higher_is_more_natural = {"Delta_LSTM": False}  # lower surprisal = more natural
 
     def score(self, pairs_df):
         df = pairs_df.copy()

@@ -9,3 +9,14 @@ taru/workspace/results
 taru/workspace/genmodel/custom
 taru/workspace/bin
 **/.DS_Store
+
+# Throwaway experiment folder (1.6 GB) — never needed in the image
+AWS_GetWeights
+
+# Committed sample corpus (~48 MB) — only used by test_all.py, not at runtime.
+# Excluded so COPY . /app doesn't bloat the deployed image.
+hi_hdtb-ud-train.conllu
+
+# EC2 deploy folder — holds the multi-GB image tarball + terraform state.
+# MUST be excluded or COPY . /app recurses the image into itself.
+deploy

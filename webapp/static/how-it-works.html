@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How it works — Hindi NLP Toolkit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #faf6ee;
+    --paper-deep: #f2ecdf;
+    --ink: #211d16;
+    --ink-soft: #6b6253;
+    --line: #d9d0bd;
+    --vermilion: #c2491d;
+    --vermilion-deep: #9c3713;
+    --green: #3d7a4a;
+    --mono: "IBM Plex Mono", monospace;
+    --sans: "IBM Plex Sans", "Noto Sans Devanagari", sans-serif;
+    --display: "Fraunces", "Noto Sans Devanagari", serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--paper);
+    background-image: radial-gradient(var(--line) 0.7px, transparent 0.7px);
+    background-size: 26px 26px;
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 0 1.25rem 4rem;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  /* ── Header ─────────────────────────────────────────── */
+  header {
+    padding: 2.6rem 0 1.6rem;
+    border-bottom: 2px solid var(--ink);
+    display: flex; align-items: flex-end; justify-content: space-between;
+    flex-wrap: wrap; gap: 0.8rem;
+    animation: rise 0.5s ease both;
+  }
+  .devanagari-mark {
+    font-family: var(--display);
+    color: var(--vermilion);
+    font-size: 0.95rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(1.9rem, 4.5vw, 2.8rem);
+    line-height: 1.05;
+  }
+  h1 em { font-style: italic; color: var(--vermilion); }
+  .back-link {
+    font-family: var(--mono); font-size: 0.78rem;
+    color: var(--vermilion-deep); text-decoration: none;
+  }
+  .back-link:hover { text-decoration: underline; }
+
+  /* ── Cards ──────────────────────────────────────────── */
+  main { margin-top: 1.6rem; }
+  .card {
+    background: #fffdf8;
+    border: 1.5px solid var(--ink);
+    box-shadow: 5px 5px 0 var(--paper-deep), 5px 5px 0 1.5px var(--line);
+    padding: 1.4rem;
+    animation: rise 0.5s ease both;
+  }
+  .card + .card { margin-top: 1.4rem; }
+  .card h2 {
+    font-family: var(--display);
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    display: flex; align-items: baseline; gap: 0.5rem;
+  }
+  .card h2 .num {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--vermilion);
+    border: 1px solid var(--vermilion);
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+  }
+  .card p { font-size: 0.88rem; line-height: 1.6; }
+  .card p + p { margin-top: 0.7rem; }
+  .card p.lead-note { color: var(--ink-soft); font-size: 0.82rem; }
+  .card code { font-family: var(--mono); font-size: 0.82em; background: var(--paper-deep); padding: 0.05rem 0.3rem; }
+  .card a { color: var(--vermilion-deep); }
+  .hindi { font-family: var(--sans); }
+
+  /* ── Flowchart ──────────────────────────────────────── */
+  .flow { margin: 1.1rem 0 0 0.45rem; }
+  .flow-node {
+    border-left: 3px solid var(--line);
+    padding: 0 0 1.15rem 1.1rem;
+    position: relative;
+  }
+  .flow-node::before {
+    content: ""; position: absolute; left: -8.5px; top: 0.28rem;
+    width: 11px; height: 11px; border-radius: 999px;
+    background: var(--paper); border: 2.5px solid var(--line);
+    transition: all 0.2s;
+  }
+  .flow-node[open]::before { border-color: var(--vermilion); background: var(--vermilion); }
+  .flow-node > summary {
+    cursor: pointer; list-style: none;
+    display: flex; align-items: baseline; gap: 0.55rem; flex-wrap: wrap;
+  }
+  .flow-node > summary::-webkit-details-marker { display: none; }
+  .step-num {
+    font-family: var(--mono); font-size: 0.68rem;
+    color: var(--vermilion); border: 1px solid var(--vermilion);
+    border-radius: 999px; padding: 0.05rem 0.4rem;
+  }
+  .step-title { font-family: var(--display); font-weight: 600; font-size: 1rem; }
+  .step-sub { font-size: 0.76rem; color: var(--ink-soft); }
+  .twist { margin-left: auto; font-family: var(--mono); font-size: 0.72rem; color: var(--ink-soft); white-space: nowrap; }
+  .twist::before { content: "+ how it's computed"; }
+  details[open] > summary .twist::before { content: "− collapse"; }
+  .flow-node > summary:hover .step-title { color: var(--vermilion-deep); }
+  .flow-body {
+    margin-top: 0.7rem;
+    background: var(--paper);
+    border: 1.5px solid var(--line);
+    padding: 0.85rem 0.95rem;
+    font-size: 0.82rem; line-height: 1.55;
+  }
+  .flow-body p + p, .flow-body ol, .flow-body ul { margin-top: 0.55rem; }
+  .flow-body ol, .flow-body ul { padding-left: 1.2rem; }
+  .flow-body li { margin-top: 0.3rem; }
+  .flow-body li::marker { color: var(--vermilion); font-family: var(--mono); font-size: 0.75rem; }
+  .artifacts { margin-top: 0.7rem; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  .artifacts .lbl { font-family: var(--mono); font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+  .artifact {
+    font-family: var(--mono); font-size: 0.7rem; color: var(--ink);
+    border: 1.5px solid var(--line); background: #fffdf8;
+    padding: 0.14rem 0.45rem;
+  }
+
+  /* trunk → fork connectors */
+  .flow-fork {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem;
+    position: relative; padding-top: 1.6rem; margin-top: -0.15rem;
+  }
+  /* horizontal bar: from the trunk spine (x ≈ 0.45rem + border) to the right branch's centre */
+  .flow-fork::before {
+    content: ""; position: absolute; top: 0; left: 0.45rem; right: 25%;
+    border-top: 3px solid var(--line);
+  }
+  .fork-branch { position: relative; min-width: 0; }
+  .fork-branch::before {
+    content: ""; position: absolute; top: -1.6rem; left: 50%;
+    height: 1.6rem; border-left: 3px solid var(--line);
+  }
+  .fork-branch::after { /* arrowhead into each branch */
+    content: ""; position: absolute; top: -7px; left: calc(50% - 4.25px);
+    border: 6px solid transparent; border-top-color: var(--line);
+  }
+  .mode-badge {
+    display: inline-block; font-family: var(--mono); font-size: 0.62rem;
+    font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    border: 1.5px solid var(--ink); background: var(--paper);
+    padding: 0.18rem 0.55rem; margin-bottom: 0.55rem;
+  }
+  .mode-badge.sentence { border-color: var(--vermilion); color: var(--vermilion-deep); }
+  .fork-node {
+    border: 1.5px solid var(--line); background: #fffdf8;
+    padding: 0.75rem 0.9rem;
+  }
+  .fork-node::before { display: none; }   /* no spine dot on fork nodes */
+  .fork-node > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 0.55rem; flex-wrap: wrap; }
+  .fork-node > summary::-webkit-details-marker { display: none; }
+  @media (max-width: 640px) {
+    .flow-fork { grid-template-columns: 1fr; padding-top: 0.9rem; }
+    .flow-fork::before, .fork-branch::before, .fork-branch::after { display: none; }
+  }
+
+  /* ── Scorer tiles ───────────────────────────────────── */
+  .score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; margin-top: 1rem; }
+  @media (max-width: 640px) { .score-grid { grid-template-columns: 1fr; } }
+  .score-tile { border: 1.5px solid var(--line); background: var(--paper); padding: 0.85rem 0.95rem; min-width: 0; }
+  .score-tile h3 {
+    font-family: var(--display); font-weight: 600; font-size: 0.98rem;
+    display: flex; align-items: baseline; gap: 0.45rem; flex-wrap: wrap;
+  }
+  .delta-chip {
+    font-family: var(--mono); font-size: 0.68rem; color: var(--vermilion-deep);
+    border: 1px solid var(--line); border-radius: 999px; padding: 0.06rem 0.4rem;
+    white-space: nowrap;
+  }
+  .badges { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.45rem 0 0.55rem; }
+  .pill {
+    font-family: var(--mono); font-size: 0.6rem; font-weight: 600;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    border-radius: 999px; padding: 0.12rem 0.5rem; border: 1px solid;
+    white-space: nowrap;
+  }
+  .pill.dir { color: var(--green); border-color: var(--green); }
+  .pill.ctx { color: var(--vermilion-deep); border-color: var(--vermilion-deep); }
+  .score-tile p { font-size: 0.79rem; line-height: 1.5; }
+  .score-tile .meta { font-size: 0.7rem; color: var(--ink-soft); margin-top: 0.4rem; }
+
+  /* ── Small tables ───────────────────────────────────── */
+  .tbl-wrap { overflow-x: auto; margin-top: 0.8rem; }
+  table.mini { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  table.mini th, table.mini td { text-align: left; padding: 0.42rem 0.5rem; border-bottom: 1px solid var(--line); }
+  table.mini th { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+  table.mini td.n { font-family: var(--mono); white-space: nowrap; }
+  table.mini .neg { color: var(--vermilion-deep); }
+  table.mini .pos { color: var(--green); }
+  .caption { font-size: 0.74rem; color: var(--ink-soft); margin-top: 0.5rem; }
+
+  footer { margin-top: 2.6rem; font-family: var(--mono); font-size: 0.7rem; color: var(--ink-soft); text-align: center; }
+  footer a { color: var(--vermilion-deep); }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="devanagari-mark">प्रक्रिया · अंक · व्याख्या</div>
+      <h1>How the pipeline <em>works</em></h1>
+    </div>
+    <a class="back-link" href="/">← back to the toolkit</a>
+  </header>
+
+  <main>
+
+    <!-- ── 01 · What this tool does ── -->
+    <section class="card" style="animation-delay:0.05s">
+      <h2><span class="num">01</span> What this tool does</h2>
+      <p>
+        Hindi is a verb-final language with fairly free word order before the verb:
+        the phrases of <span class="hindi">राम ने सीता को किताब दी</span> can appear in
+        several orders and stay grammatical — yet speakers systematically prefer some
+        orders over others. This toolkit studies <em>why</em>. It takes real,
+        human-written sentences, generates the alternative orders of their preverbal
+        phrases, and asks a set of cognitive and statistical predictors which order
+        they find more natural — testing ideas like <strong>dependency length
+        minimization</strong> (languages prefer orders that keep grammatically related
+        words close together).
+      </p>
+      <p>
+        There are two ways to use it. In <strong>Sentence mode</strong> you type one
+        Hindi sentence (plus, optionally, the sentence that came before it): the app
+        parses it, permutes its preverbal constituents, scores every candidate order, and
+        recommends the most natural one. In <strong>File mode</strong> you upload a
+        corpus (<code>.conllu</code> or <code>.txt</code>): the app filters it,
+        builds a reference-vs-variant pairs table for research or ML use, and can
+        evaluate how accurately each predictor identifies the human-written order.
+      </p>
+      <p class="lead-note">
+        Everything below is computed on this server; nothing is sent elsewhere. Each
+        step of the pipeline writes a downloadable artifact as soon as it finishes.
+      </p>
+    </section>
+
+    <!-- ── 02 · The pipeline ── -->
+    <section class="card" style="animation-delay:0.1s">
+      <h2><span class="num">02</span> The pipeline</h2>
+      <p class="lead-note">Four steps run for every job, then one of two endpoints
+        depending on the input mode. Click a step to see how it is computed.</p>
+
+      <div class="flow">
+
+        <details class="flow-node" id="parse">
+          <summary>
+            <span class="step-num">1</span>
+            <span class="step-title">Parse</span>
+            <span class="step-sub">text → dependency trees</span>
+            <span class="twist"></span>
+          </summary>
+          <div class="flow-body">
+            <p>Every sentence must become a dependency tree before anything else can happen:</p>
+            <ul>
+              <li><code>.conllu</code> uploads are read directly — they already contain
+                  gold dependency trees in CoNLL-U format, in either the
+                  <strong>Paninian</strong> (<code>k1</code>/<code>k2</code>…) or
+                  <strong>UD</strong> (<code>nsubj</code>/<code>obj</code>…) annotation
+                  scheme. The scheme dropdown must match the file; the two schemes
+                  share no labels and are never mixed.</li>
+              <li><code>.txt</code> uploads and typed sentences are parsed with
+                  <strong>Stanza's Hindi pipeline</strong>, which always outputs UD —
+                  this is why Sentence mode fixes the scheme to UD.</li>
+              <li>In Sentence mode the optional <strong>context sentence</strong> is
+                  parsed separately. It is handed to context-aware scorers as "the
+                  preceding sentence" but is itself never filtered or permuted.</li>
+            </ul>
+            <div class="artifacts"><span class="lbl">writes</span>
+              <span class="artifact">parsed.conllu</span>
+              <span class="lbl">(only when the input was plain text)</span>
+            </div>
+          </div>
+        </details>
+
+        <details class="flow-node" id="filter">
+          <summary>
+            <span class="step-num">2</span>
+            <span class="step-title">Filter</span>
+            <span class="step-sub">keep only sentences whose order can be studied cleanly</span>
+            <span class="twist"></span>
+          </summary>
+          <div class="flow-body">
+            <p>Seven filters run in a fixed order; a sentence must pass all of them.
+               The "Filter summary" card reports how many failed at each step.</p>
+            <ol>
+              <li><strong>Interrogative</strong> — rejected if the sentence contains
+                  <code>?</code>, a <code>WQ</code> tag, or an interrogative pronoun
+                  (<code>PronType=Int</code>). Interrogative word order follows its own rules.</li>
+              <li><strong>Negation</strong> — rejected on a <code>NEG</code>
+                  tag or <code>Polarity=Neg</code>; negation constrains order too.</li>
+              <li><strong>Empty nodes</strong> — rejected if the tree contains fractional
+                  token IDs (empty nodes like <code>1.1</code>) that would break
+                  reordering.</li>
+              <li><strong>Non-projective dependencies</strong> — rejected if any dependency
+                  arcs cross; constituents can't be moved as clean blocks otherwise.</li>
+              <li><strong>Non-verbal root</strong> — the root must be verbal:
+                  <code>VERB/AUX/VM/VAUX</code> under the Paninian preset,
+                  <code>VERB/AUX/NOUN/ADJ/PROPN</code> under UD (copular sentences root
+                  on the predicate nominal). This step also <em>extracts the preverbal
+                  constituents</em> — the units everything downstream permutes.</li>
+              <li><strong>Punctuation-attached constituent</strong> — rejected if a bare
+                  punctuation token hangs off the root as a constituent of its own.</li>
+              <li><strong>Too few preverbal constituents</strong> — rejected with fewer than 2
+                  preverbal constituents, since no nontrivial reordering would exist.</li>
+            </ol>
+            <div class="artifacts"><span class="lbl">writes</span>
+              <span class="artifact">passed_sentences.csv</span>
+              <span class="artifact">rejected_sentences.csv</span>
+              <span class="artifact">summary.json</span>
+            </div>
+          </div>
+        </details>
+
+        <details class="flow-node" id="variants">
+          <summary>
+            <span class="step-num">3</span>
+            <span class="step-title">Generate variants</span>
+            <span class="step-sub">permute the preverbal constituents</span>
+            <span class="twist"></span>
+          </summary>
+          <div class="flow-body">
+            <p>Each surviving sentence's preverbal constituents are permuted — whole constituents
+               move as blocks, the verb stays final. With 3 constituents that's 3! = 6
+               possible orders: the original plus up to 5 variants (capped by the
+               <em>max variants</em> option).</p>
+            <p>The output is a <strong>surface-only pairs table</strong> — one row per
+               (reference, variant) pair with the columns
+               <code>Sent_ID | Variant_ID | ML_Label | Reference_Sentence | Variant_Sentence</code>
+               and <em>no scores yet</em>. <code>ML_Label</code> is the <em>flip
+               signal</em> (1 = reference listed first, 0 = flipped), alternating row
+               by row for a 50/50 balance — see
+               <a href="#deltas">the Delta columns</a> for why.</p>
+            <p>In File mode a <strong>grammar filter</strong> additionally drops
+               reorderings whose adjacent dependency-label pairs never occur anywhere
+               in the uploaded corpus — a cheap plausibility check. Sentence mode
+               skips it (one sentence is too little evidence), so all permutations
+               are kept.</p>
+            <div class="artifacts"><span class="lbl">writes</span>
+              <span class="artifact">variants.csv</span>
+            </div>
+          </div>
+        </details>
+
+        <details class="flow-node" id="scoring">
+          <summary>
+            <span class="step-num">4</span>
+            <span class="step-title">Score</span>
+            <span class="step-sub">every ticked scorer rates both orders</span>
+            <span class="twist"></span>
+          </summary>
+          <div class="flow-body">
+            <p>Each scorer you ticked appends its raw score for <em>both</em> orders of
+               every pair as a column pair — e.g. <code>LSTM_Reference</code> /
+               <code>LSTM_Variant</code>. These always keep their true roles: the
+               reference column is always the human-written order.</p>
+            <p>Scorers that need the preceding sentence
+               (<code>information_status</code>, <code>adaptive_lstm</code>) receive
+               it from the corpus — in Sentence mode, from your context box; without a
+               context sentence they are skipped.</p>
+            <p>After all scorers have run, one <strong>central diff step</strong>
+               computes every <code>Delta_*</code> column from <code>ML_Label</code>.
+               No scorer computes its own difference, so every delta is oriented
+               identically — the full rule is in
+               <a href="#deltas">the Delta columns</a> below.</p>
+            <div class="artifacts"><span class="lbl">extends</span>
+              <span class="artifact">variants.csv</span>
+            </div>
+          </div>
+        </details>
+
+      </div><!-- /.flow -->
+
+      <div class="flow-fork">
+        <div class="fork-branch">
+          <span class="mode-badge">File mode · opt-in</span>
+          <details class="flow-node fork-node" id="evaluation">
+            <summary>
+              <span class="step-num">5a</span>
+              <span class="step-title">Evaluate</span>
+              <span class="twist"></span>
+            </summary>
+            <div class="flow-body">
+              <p>With at least <strong>200 pairs</strong>, a 10-fold cross-validated
+                 logistic regression tries to predict <code>ML_Label</code> from each
+                 <code>Delta_*</code> feature alone, and from all of them together.
+                 The report is out-of-fold accuracy against the 50% chance baseline,
+                 plus coefficient directions — the method of Ranjan &amp; van
+                 Schijndel (2024). Details in
+                 <a href="#eval-card">Evaluation accuracy</a>.</p>
+              <div class="artifacts"><span class="lbl">writes</span>
+                <span class="artifact">evaluation.json</span>
+              </div>
+            </div>
+          </details>
+        </div>
+        <div class="fork-branch">
+          <span class="mode-badge sentence">Sentence mode · always</span>
+          <details class="flow-node fork-node" id="recommendation">
+            <summary>
+              <span class="step-num">5b</span>
+              <span class="step-title">Recommend</span>
+              <span class="twist"></span>
+            </summary>
+            <div class="flow-body">
+              <p>Your original order and all its variants are ranked by combining the
+                 ticked scorers' raw scores — z-scored within the sentence, oriented
+                 so higher = more natural, and averaged with fitted weights. The
+                 winner becomes the "Recommended word order" card. Details in
+                 <a href="#rec-card">The recommendation score</a>.</p>
+              <div class="artifacts"><span class="lbl">writes</span>
+                <span class="artifact">recommendation.json</span>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div><!-- /.flow-fork -->
+    </section>
+
+    <!-- ── 03 · The seven scorers ── -->
+    <section class="card" style="animation-delay:0.15s">
+      <h2><span class="num">03</span> The seven scorers</h2>
+      <p>A scorer is a plugin that assigns each word order a number. Some are
+         deterministic measurements of the parse tree; others are trained language
+         models. The direction badge on each tile tells you how to read the raw
+         number: for surprisal-style scores <em>lower</em> means the order is easier
+         to process, while for likelihood-style scores <em>higher</em> does.</p>
+
+      <div class="score-grid">
+
+        <div class="score-tile">
+          <h3>Dependency length <span class="delta-chip">Delta_DL</span></h3>
+          <div class="badges"><span class="pill dir">↓ lower = more natural</span></div>
+          <p>Measures how far apart grammatically related words sit. Each dependency
+             arc contributes its length minus one (Gildea &amp; Jaeger); the score is
+             a 5-element vector <code>[total_DL, last_DL, second_last_DL, last_len,
+             second_last_len]</code>, and the delta uses <code>total_DL</code>.
+             Shorter dependencies are easier to process — the core DLM prediction.</p>
+          <p class="meta">Deterministic — computed from the parse, no training.</p>
+        </div>
+
+        <div class="score-tile">
+          <h3>Information status <span class="delta-chip">Delta_IS</span></h3>
+          <div class="badges">
+            <span class="pill dir">↑ higher = more natural</span>
+            <span class="pill ctx">needs context</span>
+          </div>
+          <p>Checks whether <em>given</em> information (mentioned in the preceding
+             sentence) comes before <em>new</em> information: +1 when the given
+             phrase precedes the new one, −1 when new precedes given, 0 otherwise.
+             Speakers prefer given-before-new.</p>
+          <p class="meta">Deterministic heuristic over the parse (Ranjan &amp; van
+             Schijndel 2024). Skipped without a context sentence.</p>
+        </div>
+
+        <div class="score-tile">
+          <h3>Constituency surprisal <span class="delta-chip">Delta_Surprisal</span></h3>
+          <div class="badges"><span class="pill dir">↓ lower = more natural</span></div>
+          <p>Incremental syntactic surprisal in <em>bits</em>: how surprised a
+             probabilistic phrase-structure grammar is by each word as it reads the
+             sentence left to right, summed over the sentence.</p>
+          <p class="meta">Berkeley <code>hdtb_fresh</code> PCFG + the Taru
+             incremental parser; trained on the Hindi Dependency Treebank.</p>
+        </div>
+
+        <div class="score-tile">
+          <h3>Trigram <span class="delta-chip">Delta_Trigram</span></h3>
+          <div class="badges"><span class="pill dir">↓ lower = more natural</span></div>
+          <p>Surprisal under a classic 3-gram language model: how unexpected each
+             word is given the previous two, with backoff to shorter contexts for
+             unseen sequences. A simple, purely word-sequence baseline.</p>
+          <p class="meta">NLTK maximum-likelihood 3-gram with 3-level backoff
+             smoothing.</p>
+        </div>
+
+        <div class="score-tile">
+          <h3>LSTM <span class="delta-chip">Delta_LSTM</span></h3>
+          <div class="badges"><span class="pill dir">↓ lower = more natural</span></div>
+          <p>Surprisal in <em>nats</em> under a recurrent neural language model — a
+             stronger sequence model than the trigram, sensitive to longer-range
+             patterns.</p>
+          <p class="meta">2-layer LSTM trained on Hindi Wikipedia.</p>
+        </div>
+
+        <div class="score-tile">
+          <h3>Adaptive LSTM <span class="delta-chip">Delta_Adaptive</span></h3>
+          <div class="badges">
+            <span class="pill dir">↓ lower = more natural</span>
+            <span class="pill ctx">needs context</span>
+          </div>
+          <p>The same LSTM after one quick learning step on the <em>preceding</em>
+             sentence, so its expectations adapt to the local discourse before it
+             scores the target (van Schijndel &amp; Linzen 2018).</p>
+          <p class="meta">Skipped without a context sentence.</p>
+        </div>
+
+        <div class="score-tile">
+          <h3>Berkeley PCFG <span class="delta-chip">Delta_PCFG</span></h3>
+          <div class="badges"><span class="pill dir">↑ higher = more natural</span></div>
+          <p>Whole-sentence <em>log-likelihood</em> under a Berkeley constituency
+             grammar — the odd one out: it is a probability, not a surprisal, so
+             <strong>higher</strong> means more natural. Distinct from the
+             constituency-surprisal scorer, which uses a different grammar and an
+             incremental (word-by-word) computation.</p>
+          <p class="meta">Berkeley Parser, DS-PS grammar (13,282 HUTB trees).</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── 04 · The Delta columns ── -->
+    <section class="card" id="deltas" style="animation-delay:0.2s">
+      <h2><span class="num">04</span> The Delta columns</h2>
+      <p>Every scorer stores its raw scores true-role: <code>*_Reference</code> is
+         always the human-written order, <code>*_Variant</code> always the
+         reordering. The <code>Delta_*</code> column is the score difference,
+         oriented by <code>ML_Label</code>:</p>
+      <div class="tbl-wrap">
+        <table class="mini">
+          <thead><tr><th>ML_Label</th><th>meaning</th><th>Delta_X =</th></tr></thead>
+          <tbody>
+            <tr><td class="n">1</td><td>reference listed first</td><td class="n">X_Reference − X_Variant</td></tr>
+            <tr><td class="n">0</td><td>pair flipped, variant first</td><td class="n">X_Variant − X_Reference</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Think of <code>ML_Label</code> as saying which order is "first" in the pair;
+         Delta is always <em>first minus second</em>. Labels alternate 1/0 down the
+         table, so exactly half the rows are reference-first. Why bother? A model
+         trained to predict <code>ML_Label</code> from the deltas can't beat chance
+         by always guessing "the reference is better" — it is forced to actually use
+         the score difference. This is the standard pairwise ranking transform
+         (Joachims 2002).</p>
+      <p>A worked example — the LSTM gives the reference 42.1 nats of surprisal and
+         the variant 45.3 (the reference is easier):</p>
+      <div class="tbl-wrap">
+        <table class="mini">
+          <thead><tr><th>ML_Label</th><th>LSTM_Reference</th><th>LSTM_Variant</th><th>Delta_LSTM</th></tr></thead>
+          <tbody>
+            <tr><td class="n">1</td><td class="n">42.1</td><td class="n">45.3</td><td class="n neg">−3.2</td></tr>
+            <tr><td class="n">0</td><td class="n">42.1</td><td class="n">45.3</td><td class="n pos">+3.2</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">Same scores, opposite signs — and either way the model
+         learns the same rule: the lower-surprisal side is the human-written order.
+         Note the raw columns never flip; only the delta does.</p>
+    </section>
+
+    <!-- ── 05 · Evaluation accuracy ── -->
+    <section class="card" id="eval-card" style="animation-delay:0.25s">
+      <h2><span class="num">05</span> Evaluation accuracy <span class="step-sub">(File mode)</span></h2>
+      <p>The "Ranking accuracy" card answers one question per predictor: <em>if a
+         model saw only this feature, how often would it pick the human-written
+         order over a reordered variant?</em> 50% is coin-flip chance; every point
+         above it is real signal.</p>
+      <p><strong>Method.</strong> The pairs table is split into 10 folds (fixed
+         shuffle, so runs are reproducible). For each fold, a logistic regression is
+         trained on the other nine to predict <code>ML_Label</code> from the
+         <code>Delta_*</code> features (z-scored per fold) and tested on the held-out
+         fold; the headline number pools accuracy over all held-out predictions.
+         Each feature is evaluated alone, then all together as the
+         <em>combined</em> row. The displayed coefficients come from a fit on all
+         the data with effectively no regularization.</p>
+      <p><strong>Reading the coefficients.</strong> Their sign should match each
+         scorer's declared direction — negative for lower-is-better raw scores
+         (dependency length, surprisals), positive for higher-is-better ones
+         (information status, PCFG log-likelihood). When it does, the feature
+         behaves as theory predicts.</p>
+      <p><strong>Reference numbers</strong> on the full UD Hindi treebank
+         (193,474 pairs): dependency length ≈ 61.7%, information status ≈ 51%,
+         combined ≈ 62.6%. Small uploads give noisy accuracy — that is why
+         evaluation requires at least 200 pairs (below the floor the card reports
+         "insufficient pairs") and why serious numbers need a full corpus.</p>
+    </section>
+
+    <!-- ── 06 · The recommendation score ── -->
+    <section class="card" id="rec-card" style="animation-delay:0.3s">
+      <h2><span class="num">06</span> The recommendation score <span class="step-sub">(Sentence mode)</span></h2>
+      <p>Sentence mode always ends with a "Recommended word order" card: your
+         original sentence and every generated variant, ranked. The combined score
+         behind that ranking is built in five steps:</p>
+      <ol style="padding-left:1.2rem; font-size:0.88rem; line-height:1.6; margin-top:0.6rem;">
+        <li>Every candidate order gets each ticked scorer's <em>raw</em> score —
+            read straight from the scoring step, nothing recomputed.</li>
+        <li>Only scorers with a declared direction vote (all seven built-ins have
+            one).</li>
+        <li>Per scorer, the scores are z-scored <em>across this sentence's
+            candidates only</em>, and the sign is flipped where needed so that
+            higher always means more natural.</li>
+        <li>A candidate's combined score is the <strong>weighted mean</strong> of
+            those oriented z-scores. The weights are fixed in advance — fitted
+            offline on the Hindi HDTB treebank as the strength of each feature in a
+            standardized logistic regression. All seven built-ins have one:
+            <code>Delta_Trigram</code> 1.882, <code>Delta_Adaptive</code> 1.822,
+            <code>Delta_LSTM</code> 1.820, <code>Delta_PCFG</code> 0.896,
+            <code>Delta_Surprisal</code> 0.872, <code>Delta_DL</code> 0.638,
+            <code>Delta_IS</code> 0.306. So better-validated predictors get a louder
+            vote, but a weight can never flip a scorer's declared direction.</li>
+        <li>The highest combined score wins. Exact ties go to your original
+            order.</li>
+      </ol>
+      <p style="margin-top:0.7rem"><strong>Reading the number.</strong> The score is
+         <em>relative to this sentence's own candidate set</em>: 0 is an average
+         candidate, positive is better than average, negative worse. It is not
+         comparable across sentences or runs — only the ranking within one card is
+         meaningful.</p>
+    </section>
+
+  </main>
+
+  <footer>
+    HindiNLPToolKit · hand-written guide, updated by hand — not generated from code ·
+    <a href="/">back to the toolkit</a> · API docs at <a href="/docs">/docs</a>
+  </footer>
+</div>
+
+<script>
+// Deep links: /how-it-works#filter opens that flowchart node and scrolls to it.
+(function () {
+  var id = location.hash.slice(1);
+  if (!id) return;
+  var el = document.getElementById(id);
+  if (!el) return;
+  if (el.tagName === "DETAILS") el.open = true;
+  el.scrollIntoView({ block: "start" });
+})();
+</script>
+</body>
+</html>

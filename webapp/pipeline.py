@@ -42,6 +42,19 @@ def _evaluation_payload(pairs_df) -> dict:
     return {"status": "ok", "min_pairs": MIN_EVAL_PAIRS, **result}
 
 
+def _recommendation_payload(pairs_df, scorer_names) -> dict:
+    """Most-natural-order pick for recommendation.json, or a status stub when
+    the pairs table cannot support one (no rankable features / no variants)."""
+    from scoring import recommend_order
+
+    rec = recommend_order(pairs_df, scorer_names)
+    if not rec["features"]:
+        return {"status": "no_scorers", **rec}
+    if not rec["sentences"]:
+        return {"status": "no_pairs", **rec}
+    return {"status": "ok", **rec}
+
+
 def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
     """
     Execute the pipeline for *job*.
@@ -59,6 +72,9 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
     evaluate         : bool — when True, run the pairwise ranking-accuracy
                        evaluation over the scorers' Delta_* columns and write
                        evaluation.json (needs >= MIN_EVAL_PAIRS pairs)
+    recommend        : bool (Sentence mode) — when True, rank the reference and
+                       its variants with the ticked scorers' features and write
+                       recommendation.json (the most natural word order)
     context_text     : optional preceding sentence (Sentence mode) parsed and
                        prepended to the scoring corpus so context-aware scorers
                        can see a predecessor; never filtered or permuted
@@ -156,5 +172,15 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
             encoding="utf-8",
         )
         job.artifacts.append("evaluation.json")
+
+    # Sentence-mode recommendation: pick the most natural word order among the
+    # reference and its variants (still part of the "variants" stage).
+    if options.get("recommend"):
+        payload = _recommendation_payload(pairs_df, scorer_names)
+        (out / "recommendation.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, default=float),
+            encoding="utf-8",
+        )
+        job.artifacts.append("recommendation.json")
 
     job.stage = "complete"

@@ -100,6 +100,10 @@ async def create_job(
     over the scorers' delta columns; it is forced off for typed text, where a
     single sentence cannot yield enough pairs.
 
+    Sentence mode instead gets a word-order recommendation: the reference and
+    its variants are ranked by the ticked scorers' features and the most
+    natural order is written to recommendation.json (see webapp/pipeline.py).
+
     Returns the job id.
     """
     from scoring import get_scorers
@@ -164,6 +168,8 @@ async def create_job(
         "grammar_filter": grammar_filter,
         "scorers": scorer_names,
         "evaluate": evaluate,
+        # Sentence-mode headline result; File mode has `evaluate` instead.
+        "recommend": has_text,
         "context_text": context_sentence if has_text else "",
     }
     jobs.submit(job, run_job, job, input_path, options)
@@ -215,6 +221,12 @@ def download_all(job_id: str) -> Response:
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="hindi-nlp-{job_id}.zip"'},
     )
+
+
+# Hand-written docs page — intentionally not linked from the SPA.
+@app.get("/how-it-works", include_in_schema=False)
+def how_it_works() -> FileResponse:
+    return FileResponse(Path(__file__).resolve().parent / "static" / "how-it-works.html")
 
 
 # Static frontend — mounted last so /api/* keeps priority.
