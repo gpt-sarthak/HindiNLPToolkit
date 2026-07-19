@@ -90,6 +90,7 @@ class DependencyLengthScorer(Scorer):
     )
     trained_on = "Not trained (deterministic)"
     built_with = "Gildea & Jaeger (2015) dependency-length formula (per-arc length = arc_length - 1)"
+    higher_is_more_natural = {"Delta_DL": False}  # shorter dependencies = more natural
 
     def score(self, pairs_df: pd.DataFrame, context: Optional[dict] = None) -> pd.DataFrame:
         df = pairs_df.copy()

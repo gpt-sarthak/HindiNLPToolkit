@@ -210,6 +210,7 @@ class InformationStatusScorer(Scorer):
     trained_on = "Not trained (deterministic)"
     built_with = "Given/new heuristic over the parse (Ranjan & van Schijndel 2024)"
     needs_previous_sentence = True
+    higher_is_more_natural = {"Delta_IS": True}  # given-before-new (+1) = more natural
 
     def score(self, pairs_df: pd.DataFrame, context: Optional[dict] = None) -> pd.DataFrame:
         df = pairs_df.copy()

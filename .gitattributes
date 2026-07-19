@@ -3,6 +3,13 @@
 *.synprocmodel filter=lfs diff=lfs merge=lfs -text
 *.gr filter=lfs diff=lfs merge=lfs -text
 
+# Scorer model artifacts (gitignored on GitHub; force-added to the HF Space via
+# LFS so COPY . /app bakes them into the image). See README / deploy plan.
+scoring/models/trigram.pkl filter=lfs diff=lfs merge=lfs -text
+scoring/models/base_model.pt filter=lfs diff=lfs merge=lfs -text
+scoring/models/vocab.pkl filter=lfs diff=lfs merge=lfs -text
+scoring/models/hdtb_dsps_grammar filter=lfs diff=lfs merge=lfs -text
+
 # Force LF on files the Linux Docker build compiles/reads, so Windows checkouts
 # (core.autocrlf=true) don't inject CRLF that breaks g++/shell inside the image.
 taru/config/*.txt text eol=lf

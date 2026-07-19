@@ -90,6 +90,7 @@ class PCFGDSPSScorer(Scorer):
     trained_on = "HUTB - 13,282 DS-PS constituency trees"
     built_with = "Berkeley Parser (PCFGLA) grammar, -sentence_likelihood"
     notes = "log-likelihood — higher = more probable"
+    higher_is_more_natural = {"Delta_PCFG": True}  # log-likelihood: less negative = more natural
 
     def score(self, pairs_df):
         df = pairs_df.copy()

@@ -90,6 +90,7 @@ class TrigramScorer(Scorer):
     trained_on = "Hindi text corpus"
     built_with = "NLTK MLE trigram model"
     notes = "trigram -> bigram -> unigram backoff smoothing"
+    higher_is_more_natural = {"Delta_Trigram": False}  # lower surprisal = more natural
 
     def score(self, pairs_df):
         df = pairs_df.copy()

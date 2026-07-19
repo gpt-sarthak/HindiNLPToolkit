@@ -46,6 +46,7 @@ class AdaptiveLSTMScorer(Scorer):
     trained_on = "Hindi Wikipedia (base LSTM)"
     built_with = "base LSTM + one-step online adaptation (van Schijndel & Linzen 2018)"
     needs_previous_sentence = True
+    higher_is_more_natural = {"Delta_Adaptive": False}  # lower surprisal = more natural
 
     def score(self, pairs_df, context: Optional[dict] = None):
         df = pairs_df.copy()

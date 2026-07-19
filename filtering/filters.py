@@ -119,7 +119,7 @@ def _get_preverbal_constituents(
     allowed_pos: Tuple[str, ...] = _DEFAULT_ALLOWED_POS,
 ) -> Tuple[List[List[Dict]], Optional[int], Optional[str]]:
     """
-    Extract preverbal constituent phrases from a sentence.
+    Extract preverbal constituents from a sentence.
 
     A preverbal constituent is the full dependency subtree of any direct
     dependent of the root that appears to the left of the root (token_id < root_id).
@@ -134,10 +134,10 @@ def _get_preverbal_constituents(
     """
     root = _get_root_token(sentence)
     if root is None:
-        return [], None, "Bad Root: No root token found"
+        return [], None, "Non-verbal root: No root token found"
     if root["upos"] not in allowed_pos:
         allowed_str = "/".join(allowed_pos)
-        return [], None, f"Bad Root: Root POS is '{root['upos']}', expected {allowed_str}"
+        return [], None, f"Non-verbal root: Root POS is '{root['upos']}', expected {allowed_str}"
     root_id = root["id"]
     preverbal = []
     for dep in [tok for tok in sentence if tok["head"] == root_id and tok["id"] < root_id]:
@@ -201,7 +201,7 @@ def filter_questions(
                     is_question = True
 
         if is_question:
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Question"})
+            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Interrogative"})
         else:
             passed.append(sent)
 
@@ -255,7 +255,7 @@ def filter_negatives(
                     is_negative = True
 
         if is_negative:
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Negative Sentence"})
+            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Negation"})
         else:
             passed.append(sent)
 
@@ -294,7 +294,7 @@ def filter_ghost_ids(
     for sent in sentences:
         sent_id, text = _sent_meta(sent)
         if any(not isinstance(tok["id"], int) for tok in sent):
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Ghost IDs"})
+            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Empty nodes"})
         else:
             passed.append(sent)
 
@@ -333,7 +333,7 @@ def filter_non_projective(
     for sent in sentences:
         sent_id, text = _sent_meta(sent)
         if not _is_projective(sent):
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Non-Projective Tree"})
+            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Non-projective dependencies"})
         else:
             passed.append(sent)
 
@@ -368,7 +368,7 @@ def filter_bad_root(
                ``generate_variants()``.
     rejected : DataFrame with columns Sent_ID | Sentence | Reason.
                The Reason field includes the actual root POS tag found
-               (e.g. ``"Bad Root: Root POS is 'NN', expected VERB/AUX/VM/VAUX"``).
+               (e.g. ``"Non-verbal root: Root POS is 'NN', expected VERB/AUX/VM/VAUX"``).
 
     Example
     -------
@@ -437,7 +437,7 @@ def filter_punct_constituents(
                ``constituents``.  Ready for ``filter_min_phrases()`` and
                ``generate_variants()``.
     rejected : DataFrame with columns Sent_ID | Sentence | Reason.
-               Reason is always ``"Punct-attached preverbal constituent"``.
+               Reason is always ``"Punctuation-attached constituent"``.
 
     Raises
     ------
@@ -488,7 +488,7 @@ def filter_punct_constituents(
             rejected.append({
                 "Sent_ID": sent_id,
                 "Sentence": text,
-                "Reason": "Punct-attached preverbal constituent",
+                "Reason": "Punctuation-attached constituent",
             })
         else:
             passed.append({"sentence": sent, "root_id": root_id, "constituents": consts})
@@ -555,7 +555,7 @@ def filter_min_phrases(
 
     passed: List[Dict] = []
     rejected: List[Dict] = []
-    reason_template = f"Fewer than {min_phrases} preverbal phrase{'s' if min_phrases != 1 else ''}"
+    reason_template = f"Fewer than {min_phrases} preverbal constituent{'s' if min_phrases != 1 else ''}"
 
     for item in sentences_or_items:
         if pre_computed:
@@ -604,7 +604,7 @@ def filter_sentences(
     4. ``filter_non_projective``      — removes non-projective dependency trees
     5. ``filter_bad_root``            — removes non-verbal roots; extracts constituents
     6. ``filter_punct_constituents``  — removes sentences with a bare punct constituent
-    7. ``filter_min_phrases``         — removes sentences below the phrase-count threshold
+    7. ``filter_min_phrases``         — removes sentences below the constituent-count threshold
 
     Parameters
     ----------
@@ -623,7 +623,7 @@ def filter_sentences(
     rejected_df  : DataFrame   — all rejected sentences across all seven filters,
                    columns: Sent_ID | Sentence | Reason.
     passed_df    : DataFrame   — rich feature table for the passed sentences,
-                   columns: Sent_ID | Sentence | Root_ID | Phrase_Count |
+                   columns: Sent_ID | Sentence | Root_ID | Constituent_Count |
                    Character_Length | Sentence_Length | Constituent_Lengths |
                    Deprel_Tags | Grammatical_Pairs.
 
@@ -642,14 +642,20 @@ def filter_sentences(
         raise ValueError("sentences list is empty.")
 
     # ── Run all seven filters in sequence ────────────────────────────────────
+    # Each individual filter raises on an empty input list (a deliberate guard
+    # for standalone use).  In the pipeline a stage can legitimately empty the
+    # set — e.g. the only sentence has a bad root — so skip any later stage whose
+    # input is already empty and still emit the rejection log + summary below.
+    # (Without this, one rejected sentence aborts the whole run with no outputs.)
+    _empty = _make_rejected_df([])
     p1, r1 = filter_questions(sentences)
-    p2, r2 = filter_negatives(p1)
-    p3, r3 = filter_ghost_ids(p2)
-    p4, r4 = filter_non_projective(p3)
-    p5, r5 = filter_bad_root(p4, allowed_pos=allowed_root_pos)
+    p2, r2 = filter_negatives(p1) if p1 else ([], _empty)
+    p3, r3 = filter_ghost_ids(p2) if p2 else ([], _empty)
+    p4, r4 = filter_non_projective(p3) if p3 else ([], _empty)
+    p5, r5 = filter_bad_root(p4, allowed_pos=allowed_root_pos) if p4 else ([], _empty)
     # p5 onward is List[Dict] with pre-computed constituents
-    p6, r6 = filter_punct_constituents(p5)
-    passed_list, r7 = filter_min_phrases(p6, min_phrases=min_phrases)
+    p6, r6 = filter_punct_constituents(p5) if p5 else ([], _empty)
+    passed_list, r7 = filter_min_phrases(p6, min_phrases=min_phrases) if p6 else ([], _empty)
 
     # ── Merge all rejection logs into one DataFrame ───────────────────────────
     rejected_df = pd.concat([r1, r2, r3, r4, r5, r6, r7], ignore_index=True)
@@ -668,7 +674,7 @@ def filter_sentences(
             "Sent_ID": sent_id,
             "Sentence": sent_text,
             "Root_ID": root_id,
-            "Phrase_Count": len(consts),
+            "Constituent_Count": len(consts),
             "Character_Length": len(sent_text),
             "Sentence_Length": sum(1 for tok in sent_obj if isinstance(tok["id"], int)),
             "Constituent_Lengths": str([len(c) for c in consts]),
@@ -677,7 +683,7 @@ def filter_sentences(
         })
 
     _cols = [
-        "Sent_ID", "Sentence", "Root_ID", "Phrase_Count",
+        "Sent_ID", "Sentence", "Root_ID", "Constituent_Count",
         "Character_Length", "Sentence_Length",
         "Constituent_Lengths", "Deprel_Tags", "Grammatical_Pairs",
     ]
@@ -726,8 +732,8 @@ def summarize(
     rejection_counts          : dict  — {reason_string: count}
     filter_order              : list  — [{filter, rejected}, …] in pipeline order
     avg_sentence_length       : float — mean token count of passed sentences
-    avg_phrase_count          : float — mean preverbal constituent count
-    phrase_count_distribution : dict  — {n_phrases: sentence_count}
+    avg_constituent_count          : float — mean preverbal constituent count
+    constituent_count_distribution : dict  — {n_constituents: sentence_count}
 
     Example
     -------
@@ -742,33 +748,33 @@ def summarize(
     if not rejected_df.empty and "Reason" in rejected_df.columns:
         rejection_counts = rejected_df["Reason"].value_counts().to_dict()
 
-    # Group all "Bad Root: …" variants under one entry so filter_order has
+    # Group all "Non-verbal root: …" variants under one entry so filter_order has
     # exactly one entry per filter stage.
     filter_order = []
-    for key in ("Question", "Negative Sentence", "Ghost IDs",
-                "Non-Projective Tree", "Bad Root",
-                "Punct-attached preverbal constituent", "Fewer than"):
-        if key == "Bad Root":
-            count = sum(v for k, v in rejection_counts.items() if k.startswith("Bad Root"))
+    for key in ("Interrogative", "Negation", "Empty nodes",
+                "Non-projective dependencies", "Non-verbal root",
+                "Punctuation-attached constituent", "Fewer than"):
+        if key == "Non-verbal root":
+            count = sum(v for k, v in rejection_counts.items() if k.startswith("Non-verbal root"))
         elif key == "Fewer than":
-            # Matches dynamic labels from filter_min_phrases ("Fewer than N preverbal phrase(s)")
+            # Matches dynamic labels from filter_min_phrases ("Fewer than N preverbal constituent(s)")
             count = sum(v for k, v in rejection_counts.items() if k.startswith("Fewer than"))
-            key = "Fewer than N preverbal phrases"
+            key = "Too few preverbal constituents"
         else:
             count = rejection_counts.get(key, 0)
         filter_order.append({"filter": key, "rejected": count})
 
     sent_lengths: List[int] = []
-    phrase_counts: List[int] = []
+    constituent_counts: List[int] = []
     for item in passed_list:
         sent_lengths.append(
             sum(1 for tok in item["sentence"] if isinstance(tok["id"], int))
         )
-        phrase_counts.append(len(item["constituents"]))
+        constituent_counts.append(len(item["constituents"]))
 
-    phrase_dist: Dict[int, int] = defaultdict(int)
-    for c in phrase_counts:
-        phrase_dist[c] += 1
+    constituent_dist: Dict[int, int] = defaultdict(int)
+    for c in constituent_counts:
+        constituent_dist[c] += 1
 
     return {
         "total_input": total_input,
@@ -778,6 +784,6 @@ def summarize(
         "rejection_counts": rejection_counts,
         "filter_order": filter_order,
         "avg_sentence_length": round(float(np.mean(sent_lengths)), 2) if sent_lengths else 0.0,
-        "avg_phrase_count": round(float(np.mean(phrase_counts)), 2) if phrase_counts else 0.0,
-        "phrase_count_distribution": dict(sorted(phrase_dist.items())),
+        "avg_constituent_count": round(float(np.mean(constituent_counts)), 2) if constituent_counts else 0.0,
+        "constituent_count_distribution": dict(sorted(constituent_dist.items())),
     }

@@ -49,6 +49,7 @@ class SurprisalScorer(Scorer):
                   "word order. Advantage: Delta_Surprisal.")
     trained_on = "HDTB (Hindi Dependency Treebank)"
     built_with = "Berkeley 'hdtb_fresh' grammar + Taru synproc incremental parser"
+    higher_is_more_natural = {"Delta_Surprisal": False}  # lower surprisal = more natural
 
     def score(self, pairs_df):
         df = pairs_df.copy()

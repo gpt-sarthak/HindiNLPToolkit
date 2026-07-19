@@ -118,6 +118,18 @@ Rules — **do not break these:**
   takes — your scorer shows up in the *Ranking accuracy* results with nothing
   extra to implement.
 
+- **Optional: vote in word-order recommendations.** Declare which direction of
+  your raw score marks the more natural order, and Sentence-mode runs will
+  include your feature when picking the best word order (the *Recommended word
+  order* card):
+
+  ```python
+  higher_is_more_natural = {"Delta_Surprisal": False}   # False = lower is more natural
+  ```
+
+  Use `False` for surprisal/length-style scores, `True` for likelihood/givenness
+  -style scores. Leave it out to stay out of recommendations.
+
 Read these before you start: `scoring/example_scorer.py` (copy-paste template),
 `scoring/dl_scorer.py` and `scoring/is_scorer.py` (the two built-in scorers).
 
@@ -196,5 +208,8 @@ out = apply_scorers(pairs_df, ["<your-name>"], context=context)
   `.gitignore` already covers the common cases; add your weight files if needed.
 - Reusable, scorer-agnostic primitives (previous-sentence lookup, rebuilding a
   variant's tree) live in `helpers/` — check there before writing your own.
+- **Adding a scorer? Also add a tile** for it to the user-facing guide at
+  `webapp/static/how-it-works.html` (served at `/how-it-works`) — that page is
+  deliberately hand-written, not generated from `/api/plugins`.
 
 Full API reference: [`DOCS.md`](DOCS.md).
