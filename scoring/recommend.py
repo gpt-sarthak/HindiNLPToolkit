@@ -162,43 +162,7 @@ def recommend_order(pairs_df: pd.DataFrame, names: List[str]) -> dict:
         groups.setdefault(row["Sent_ID"], []).append(row)
 
     for sent_id, rows in groups.items():
-        # Reference first: its raw scores are identical on every row of the
-        # group, so read them off the first one.
-        candidates: List[dict] = [{
-            "id": "reference",
-            "sentence": str(rows[0]["Reference_Sentence"]),
-            "is_reference": True,
-            "values": {s["delta"]: _finite(s["ref_fn"](rows[0])) for s in specs},
-        }]
-        for row in rows:
-            candidates.append({
-                "id": str(row["Variant_ID"]),
-                "sentence": str(row["Variant_Sentence"]),
-                "is_reference": False,
-                "values": {s["delta"]: _finite(s["var_fn"](row)) for s in specs},
-            })
-
-        # Weighted mean of oriented z-scores, over the features where each
-        # candidate has a finite value.
-        num = [0.0] * len(candidates)
-        den = [0.0] * len(candidates)
-        for s in specs:
-            oriented = _oriented_z(
-                [c["values"][s["delta"]] for c in candidates],
-                s["higher_is_more_natural"],
-            )
-            for i, z in enumerate(oriented):
-                if z is not None:
-                    num[i] += s["weight"] * z
-                    den[i] += s["weight"]
-
-        best = None
-        for cand, n, d in zip(candidates, num, den):
-            cand["score"] = (n / d) if d > 0 else None
-            # Strict ">" + reference-first order: exact ties go to the reference.
-            if cand["score"] is not None and (best is None or cand["score"] > best["score"]):
-                best = cand
-
+        candidates, best = _rank_group(rows, specs)
         result["sentences"].append({
             "sent_id": str(sent_id),
             "recommended": None if best is None else {
@@ -207,3 +171,103 @@ def recommend_order(pairs_df: pd.DataFrame, names: List[str]) -> dict:
             "candidates": candidates,
         })
     return result
+
+
+def _rank_group(rows: List[dict], specs: List[dict]) -> tuple:
+    """Rank one sentence's candidates (reference + its variants) and pick the
+    winner.  Returns ``(candidates, best)`` where *candidates* is the
+    reference-first list (each with ``id`` / ``sentence`` / ``is_reference`` /
+    ``values`` / ``score``) and *best* is the winning candidate dict, or None
+    when nothing could be scored.  Shared by :func:`recommend_order` (keeps the
+    full list) and :func:`recommend_column` (keeps only *best*)."""
+    # Reference first: its raw scores are identical on every row of the group,
+    # so read them off the first one.
+    candidates: List[dict] = [{
+        "id": "reference",
+        "sentence": str(rows[0]["Reference_Sentence"]),
+        "is_reference": True,
+        "values": {s["delta"]: _finite(s["ref_fn"](rows[0])) for s in specs},
+    }]
+    for row in rows:
+        candidates.append({
+            "id": str(row["Variant_ID"]),
+            "sentence": str(row["Variant_Sentence"]),
+            "is_reference": False,
+            "values": {s["delta"]: _finite(s["var_fn"](row)) for s in specs},
+        })
+
+    # Weighted mean of oriented z-scores, over the features where each
+    # candidate has a finite value.
+    num = [0.0] * len(candidates)
+    den = [0.0] * len(candidates)
+    for s in specs:
+        oriented = _oriented_z(
+            [c["values"][s["delta"]] for c in candidates],
+            s["higher_is_more_natural"],
+        )
+        for i, z in enumerate(oriented):
+            if z is not None:
+                num[i] += s["weight"] * z
+                den[i] += s["weight"]
+
+    best = None
+    for cand, n, d in zip(candidates, num, den):
+        cand["score"] = (n / d) if d > 0 else None
+        # Strict ">" + reference-first order: exact ties go to the reference.
+        if cand["score"] is not None and (best is None or cand["score"] > best["score"]):
+            best = cand
+    return candidates, best
+
+
+def recommend_column(pairs_df: pd.DataFrame, names: List[str]) -> Optional[pd.DataFrame]:
+    """
+    Per-row recommended word order for the scored pairs table.
+
+    Broadcasts one recommendation per source sentence (``Sent_ID``) across all
+    of that sentence's rows — the same winner :func:`recommend_order` picks, but
+    computed group-by-group keeping only the winner (never the full candidate
+    lists), so it stays light on a large corpus.
+
+    Parameters
+    ----------
+    pairs_df : the scored pairs table (raw ``*_Reference`` / ``*_Variant``
+               columns must be present for the named scorers).
+    names    : scorer names whose features vote (as passed to ``apply_scorers``).
+
+    Returns
+    -------
+    A DataFrame aligned to ``pairs_df.index`` with three columns —
+    ``Recommended_Sentence`` (the winning surface string), ``Recommended_Is_Reference``
+    (True when the reference order won), and ``Recommended_Score`` (the winner's
+    combined weighted-z score) — ready to ``join`` onto *pairs_df*.  Returns
+    **None** when no named scorer contributes a rankable feature (nothing to
+    rank → no columns).  Rows of a sentence with no scorable candidate get blank
+    / NaN values.
+    """
+    specs = _feature_specs(names)
+    if not specs:
+        return None
+
+    # Group rows per source sentence, preserving first-appearance order.
+    groups: Dict[str, List[dict]] = {}
+    for row in pairs_df.to_dict("records"):
+        groups.setdefault(row["Sent_ID"], []).append(row)
+
+    # sent_id (raw dtype, for an exact map back to df rows) -> winner triple.
+    picks: Dict[object, tuple] = {}
+    for sent_id, rows in groups.items():
+        _candidates, best = _rank_group(rows, specs)  # candidates discarded here
+        picks[sent_id] = (
+            (best["sentence"], bool(best["is_reference"]), best["score"])
+            if best is not None else (None, None, None)
+        )
+
+    sids = pairs_df["Sent_ID"]
+    return pd.DataFrame(
+        {
+            "Recommended_Sentence": sids.map(lambda s: picks[s][0]),
+            "Recommended_Is_Reference": sids.map(lambda s: picks[s][1]),
+            "Recommended_Score": sids.map(lambda s: picks[s][2]),
+        },
+        index=pairs_df.index,
+    )

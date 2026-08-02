@@ -80,7 +80,7 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
                        can see a predecessor; never filtered or permuted
     """
     from filtering import filter_sentences, summarize
-    from scoring import apply_scorers, build_corpus_context
+    from scoring import apply_scorers, build_corpus_context, recommend_column
     from stanza_parser import load_input
     from variants import generate_variants
 
@@ -160,6 +160,12 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
             "scheme": options.get("scheme"),
         }
         pairs_df = apply_scorers(pairs_df, scorer_names, context=context)
+        # Recommended word order per source sentence, broadcast across its rows
+        # (both modes — one column set, constant within each Sent_ID).  None when
+        # no ticked scorer contributes a rankable feature.
+        rec_cols = recommend_column(pairs_df, scorer_names)
+        if rec_cols is not None:
+            pairs_df = pairs_df.join(rec_cols)
     pairs_df.to_csv(out / "variants.csv", index=False, encoding="utf-8")
     job.artifacts.append("variants.csv")
 
