@@ -156,6 +156,8 @@
   .scorer-row input { accent-color: var(--vermilion); margin-top: 0.2rem; }
   .scorer-row .desc { color: var(--ink-soft); font-size: 0.74rem; display: block; }
   .scorer-row code { font-family: var(--mono); font-size: 0.8rem; }
+  /* Scorer title — also used for the predictor name in the ranking table. */
+  .scorer-row .sname, table.eval .sname { font-weight: 600; font-size: 0.86rem; color: var(--ink); display: block; }
   .scorer-row .scorer-meta { list-style: none; margin: 0.25rem 0 0; padding: 0; color: var(--ink-soft); font-size: 0.7rem; }
   .scorer-row .scorer-meta li { position: relative; padding-left: 0.85rem; line-height: 1.4; }
   .scorer-row .scorer-meta li::before { content: "\2022"; position: absolute; left: 0; color: var(--vermilion); }
@@ -444,7 +446,7 @@
 
       <div class="card" id="taru-card" style="animation-delay:0.27s">
         <h2><span class="num">06</span> Syntactic Tree &amp; Surprisal toolkit</h2>
-        <p class="idle-note">Parse Hindi into constituency trees and per-word surprisal with the toolkit — the same HDTB backend the <code>surprisal</code> scorer calls. Open it as its own page; nothing leaves this server.</p>
+        <p class="idle-note">Parse Hindi into constituency trees and per-word surprisal with the toolkit — the same HDTB backend the PCFG Modelblocks Incremental Surprisal scorer calls. Open it as its own page; nothing leaves this server.</p>
         <div class="downloads" style="margin-top:0.8rem">
           <a class="dl" id="taru-open" href="/taru" target="_blank" rel="noopener" style="text-decoration:none">Open Tree &amp; Surprisal →</a>
         </div>
@@ -521,12 +523,14 @@ fetch("/api/plugins").then(r => r.json()).then(plugins => {
     cb.value = p.name;
 
     const info = document.createElement("span");
-    const code = document.createElement("code");
-    code.textContent = p.name;
+    // Human title; the machine name stays on the checkbox value only.
+    const title = document.createElement("span");
+    title.className = "sname";
+    title.textContent = p.display_name || p.name;
     const desc = document.createElement("span");
     desc.className = "desc";
     desc.textContent = p.description;
-    info.append(code, desc);
+    info.append(title, desc);
 
     // Standardized metadata bullets (only the fields the scorer filled in).
     const meta = [
@@ -843,7 +847,7 @@ function renderRecommendation(rec) {
     const table = document.createElement("table");
     table.className = "eval";
     const headCells = rec.features.map(f =>
-      `<th title="${esc(f.scorer)}">${esc(f.delta.replace(/^Delta_/, ""))} ${f.higher_is_more_natural ? "↑" : "↓"}</th>`
+      `<th title="${esc(f.display_name || f.scorer)}">${esc(f.delta.replace(/^Delta_/, ""))} ${f.higher_is_more_natural ? "↑" : "↓"}</th>`
     ).join("");
     table.innerHTML = `<thead><tr><th>Word order</th>${headCells}<th style="text-align:right">Score</th></tr></thead>`;
     const tbody = document.createElement("tbody");
@@ -906,7 +910,7 @@ function renderEvaluation(ev) {
   }
   for (const p of ev.predictors) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td><code>${esc(p.label)}</code>
+    tr.innerHTML = `<td><span class="sname">${esc(p.label)}</span>
         <span class="eval-dir">${esc(p.direction)} · coefficient ${p.coefficient}</span></td>
       <td class="acc">${accCell(p.accuracy, p.ci_low, p.ci_high)}</td>
       <td class="n">${p.n}</td>`;

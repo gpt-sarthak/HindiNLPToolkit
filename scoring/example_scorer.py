@@ -8,7 +8,7 @@ Nothing here is registered: the example class is intentionally left commented
 out so it does not add a column to every run.  For real, working scorers to
 read alongside this template, see:
 
-    scoring/dl_scorer.py   — dependency_length  (5-element DL feature vectors)
+    scoring/dl_scorer.py   — dependency_length  (total dependency length)
     scoring/is_scorer.py   — information_status  (givenness, needs corpus context)
 
 A scorer adds one or more columns to ``pairs_df`` (the ``generate_variants``
@@ -31,7 +31,8 @@ Example
         return ast.literal_eval(value) if isinstance(value, str) else list(value)
 
     class MyScorer(Scorer):
-        name = "my_scorer"                  # shown as a checkbox in the UI
+        name = "my_scorer"                  # machine name: API + registry key
+        display_name = "My Scorer"          # title shown in the UI
         description = "One line shown in the web UI."
         # Optional standardized metadata, rendered as bullets in the scorer list.
         # Leave "" to omit a bullet; empty trained_on reads as "not trained".

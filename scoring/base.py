@@ -6,9 +6,10 @@ The contract every scorer plugin must implement.
 To add your own scorer
 ----------------------
 1. Create a new file in the ``scoring/`` package, e.g. ``scoring/my_scorer.py``.
-2. Subclass :class:`Scorer`, set ``name`` and ``description``, and implement
-   ``score()``.  Optionally set the standardized ``trained_on`` / ``built_with``
-   / ``notes`` fields — they render as bullets in the scorer list.
+2. Subclass :class:`Scorer`, set ``name``, ``display_name`` and
+   ``description``, and implement ``score()``.  Optionally set the standardized
+   ``trained_on`` / ``built_with`` / ``notes`` fields — they render as bullets in
+   the scorer list.
 3. Done — the web app discovers it automatically and shows it as a checkbox.
    No registration code, no web code.
 
@@ -21,6 +22,7 @@ Example
 
     class MyScorer(Scorer):
         name = "my_scorer"
+        display_name = "My Scorer"
         description = "One line shown in the web UI."
 
         def score(self, pairs_df):
@@ -61,8 +63,12 @@ class Scorer:
 
     Attributes
     ----------
-    name        : unique machine name (used in API requests and the registry).
-    description : one-line human description (shown in the web UI).
+    name         : unique machine name (API requests, the registry, the
+                   ``scorers`` form field).  Snake_case, never shown to users.
+    display_name : the human-readable title shown in the web UI scorer list
+                   (e.g. "Dependency Length").  Falls back to ``name`` when left
+                   empty, so a scorer that omits it still renders.
+    description  : one-line human description (shown in the web UI).
 
     Optional standardized metadata (rendered as bullets in the web UI scorer
     list and surfaced by ``/api/plugins``).  Leave any of them ``""`` to omit
@@ -86,6 +92,7 @@ class Scorer:
     """
 
     name: str = ""
+    display_name: str = ""
     description: str = ""
     trained_on: str = ""
     built_with: str = ""
@@ -100,8 +107,8 @@ class Scorer:
         Parameters
         ----------
         pairs_df : DataFrame from ``generate_variants()`` with columns
-                   Sent_ID | Variant_ID | Reference_Sentence | Variant_Sentence |
-                   Ref_Features | Var_Features | Diff_Features | ML_Label
+                   Sent_ID | Variant_ID | ML_Label | Reference_Sentence |
+                   Variant_Sentence
                    (plus any columns added by scorers that ran before this one).
 
         Returns

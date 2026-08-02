@@ -39,12 +39,13 @@ from .base import Scorer
 
 class AdaptiveLSTMScorer(Scorer):
     name = "adaptive_lstm"
+    display_name = "Adaptive LSTM"
     description = (
         "Adaptive LSTM surprisal (nats) of each word order, after adapting to "
-        "the preceding sentence. Advantage: Delta_Adaptive."
+        "the preceding sentence. Feature in CSV: Delta_Adaptive."
     )
     trained_on = "Hindi Wikipedia (base LSTM)"
-    built_with = "base LSTM + one-step online adaptation (van Schijndel & Linzen 2018)"
+    built_with = "base LSTM + one-step online adaptation"
     needs_previous_sentence = True
     higher_is_more_natural = {"Delta_Adaptive": False}  # lower surprisal = more natural
 

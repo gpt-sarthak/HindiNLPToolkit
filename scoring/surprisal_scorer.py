@@ -45,10 +45,13 @@ def _sentence_surprisal(sentence: str) -> float:
 
 class SurprisalScorer(Scorer):
     name = "surprisal"
-    description = ("Constituency (PCFG) incremental surprisal (bits) of each "
-                  "word order. Advantage: Delta_Surprisal.")
+    display_name = "PCFG Modelblocks Incremental Surprisal"
+    description = ("Word-by-word processing difficulty (bits) of each word "
+                   "order, from an incremental constituency parse. "
+                   "Feature in CSV: Delta_Surprisal.")
     trained_on = "HDTB (Hindi Dependency Treebank)"
-    built_with = "Berkeley 'hdtb_fresh' grammar + Taru synproc incremental parser"
+    built_with = "Taru synproc incremental parser, HDTB grammar"
+    notes = "surprisal in bits — lower = easier to process"
     higher_is_more_natural = {"Delta_Surprisal": False}  # lower surprisal = more natural
 
     def score(self, pairs_df):

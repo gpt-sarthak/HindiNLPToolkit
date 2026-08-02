@@ -24,9 +24,10 @@ from .base import Scorer
 
 class LSTMScorer(Scorer):
     name = "lstm"
+    display_name = "LSTM"
     description = (
         "LSTM language-model surprisal (nats) of each word order. "
-        "Advantage: Delta_LSTM."
+        "Feature in CSV: Delta_LSTM."
     )
     trained_on = "Hindi Wikipedia"
     built_with = "2-layer LSTM language model (embed 256 -> LSTM 256, dropout 0.3)"

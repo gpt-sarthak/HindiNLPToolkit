@@ -443,7 +443,7 @@ A single `pandas.DataFrame` (`pairs_df`) with exactly these columns:
 | `Reference_Sentence` | Reference surface text |
 | `Variant_Sentence` | Variant surface text |
 
-Feature columns (`Ref_Features`, `Var_Features`, `Delta_DL`, `IS_*`, …) are added
+Feature columns (`DL_Reference`, `DL_Variant`, `Delta_DL`, `IS_*`, …) are added
 later by scorers — see the scoring section below. The web app also appends the
 recommended word order (`Recommended_Sentence` / `Recommended_Is_Reference` /
 `Recommended_Score`) to `variants.csv` when scorers run — see `recommend_column`.
@@ -589,7 +589,8 @@ Create one file, e.g. `scoring/my_scorer.py`:
 from .base import Scorer
 
 class MyScorer(Scorer):
-    name = "my_scorer"                      # shown as a checkbox in the UI
+    name = "my_scorer"                      # machine name: API + registry key
+    display_name = "My Scorer"              # title shown in the UI
     description = "One-line description."
 
     def score(self, pairs_df):
@@ -718,38 +719,29 @@ the constituent order is already known.
 ### Built-in scorer: `dependency_length`
 
 - **Trained on:** Not trained (deterministic)
-- **Built with:** Gildea & Jaeger (2015) dependency-length formula (per-arc length = arc_length − 1)
+- **Built with:** Dependency-length minimization, per-arc length = arc_length − 1
 
 The dependency-length feature scorer (dependency-length-minimization, after
 Gildea & Jaeger 2015). It reconstructs each variant's reordered, re-indexed
 dependency tree (from the reference parse in `context["passed"]` plus the
-variant surface string) and extracts a 5-element feature vector for both orders.
-
-Feature vector (5 elements, per-arc length = `arc_length − 1`):
-
-| Index | Name | Description |
-|---|---|---|
-| 0 | `total_DL` | Sentence-level total dependency length |
-| 1 | `last_DL` | Dep-head distance of the constituent immediately before the verb |
-| 2 | `second_last_DL` | Dep-head distance of the 2nd-closest constituent |
-| 3 | `last_len` | Token count of the constituent immediately before the verb |
-| 4 | `second_last_len` | Token count of the 2nd-closest constituent |
+variant surface string) and measures the total dependency length of both orders:
+the sum of `arc_length − 1` over every non-root dependency arc.
 
 Columns added to `variants.csv`:
 
 | Column | Description |
 |---|---|
-| `Ref_Features` | The 5-vector for the reference order (true role) |
-| `Var_Features` | The 5-vector for the variant order (true role) |
-| `Delta_DL` | Advantage: the `ML_Label`-oriented difference of `total_DL` (computed by the central diff step) |
+| `DL_Reference` | Total dependency length of the reference order (true role) |
+| `DL_Variant` | Total dependency length of the variant order (true role) |
+| `Delta_DL` | The `ML_Label`-oriented difference of the two (computed by the central diff step) |
 
-Needs `context["passed"]` (the filter output). Without it the feature columns
-are emitted as zero vectors.
+Needs `context["passed"]` (the filter output). Without it both columns are
+emitted as `0`.
 
 ### Built-in scorer: `information_status`
 
 - **Trained on:** Not trained (deterministic)
-- **Built with:** given/new heuristic over the parse (Ranjan & van Schijndel 2024)
+- **Built with:** Given/new heuristic over the parse
 - **Requires:** a context sentence
 
 Information Status (IS) / givenness, after Ranjan & van Schijndel (2024). For
@@ -818,7 +810,8 @@ pairs_df = apply_scorers(
 ### Built-in scorer: `surprisal`
 
 - **Trained on:** HDTB (Hindi Dependency Treebank)
-- **Built with:** Berkeley `hdtb_fresh` grammar + Taru `synproc` incremental parser
+- **Built with:** Taru `synproc` incremental parser, HDTB grammar
+- **Notes:** surprisal in bits — lower = easier to process
 
 Constituency (PCFG) **incremental** surprisal of each word order, from the
 SyntacticTreeSurprisal (Taru) toolkit on the HDTB grammar. Per-word surprisals
@@ -833,8 +826,8 @@ are summed to a sentence total (bits).
 ### Built-in scorer: `trigram`
 
 - **Trained on:** Hindi text corpus
-- **Built with:** NLTK MLE trigram model
-- **Notes:** trigram→bigram→unigram backoff smoothing
+- **Built with:** NLTK MLE trigram model (unsmoothed word counts)
+- **Notes:** smoothed by trigram→bigram→unigram backoff
 
 Trigram language-model surprisal (Ranjan & van Schijndel 2024), from a pickled
 NLTK MLE trigram model trained on Hindi (`scoring/models/trigram.pkl`). For each
@@ -878,7 +871,7 @@ Base LSTM language-model surprisal, from a 2-layer LSTM (Embedding 256 → LSTM
 ### Built-in scorer: `adaptive_lstm`
 
 - **Trained on:** Hindi Wikipedia (base LSTM)
-- **Built with:** base LSTM + one-step online adaptation (van Schijndel & Linzen 2018)
+- **Built with:** base LSTM + one-step online adaptation
 - **Requires:** a context sentence
 
 Adaptive LSTM surprisal (van Schijndel & Linzen 2018; Ranjan & van Schijndel
@@ -903,27 +896,32 @@ runs and the score equals the plain `lstm` surprisal.
 ### Built-in scorer: `berkeley_pcfg`
 
 - **Trained on:** HUTB — 13,282 DS-PS constituency trees
-- **Built with:** Berkeley Parser (PCFGLA) grammar, `-sentence_likelihood`
-- **Notes:** log-likelihood — higher = more probable
+- **Built with:** Berkeley Parser (PCFGLA), DS-PS grammar
+- **Notes:** surprisal in nats — lower = easier to process
 
-Berkeley **DS-PS** PCFG *sentence log-likelihood*, scored with the Berkeley
+Berkeley **DS-PS** PCFG *whole-sentence surprisal*, scored with the Berkeley
 Parser (`-sentence_likelihood`) on the HDTB DS-PS grammar
 (`scoring/models/hdtb_dsps_grammar`), reusing the jar already bundled for the
 Taru tool (`taru/external_resources/berkeleyparser/berkeleyParser.jar`). One
 batched JVM call scores all unique surfaces in the table.
 
-> **Units.** This is a **log-likelihood** (higher = more probable), *not* a
-> surprisal. It is distinct from the `surprisal` scorer, which is *incremental*
-> constituency surprisal from the Taru `synproc` engine on a different
-> (`hdtb_fresh`) grammar.
+> **Units.** Surprisal is exactly `−log P`, so the parser's log-likelihood is
+> **negated on the way in** and the stored value is a surprisal in nats (lower =
+> more probable under the grammar). This targets the same quantity as the
+> `surprisal` scorer, but computes it whole-sentence rather than incrementally,
+> with a different grammar (HUTB DS-PS vs an HDTB-derived model), a different
+> engine (Berkeley Java parser vs Taru `synproc`), and nats rather than bits.
+>
+> The `-inf` guard for unparseable sentences is applied to the **raw**
+> log-likelihood, before negation.
 
 Requires **Java** on `PATH` (present in the Docker image). If the jar/grammar is
 missing, Java is unavailable, or a sentence is unparseable, that score is `NaN`.
 
 | Column | Description |
 |---|---|
-| `PCFG_Reference` | Sentence log-likelihood of the reference order |
-| `PCFG_Variant` | Sentence log-likelihood of the variant order |
+| `PCFG_Reference` | Whole-sentence surprisal (nats) of the reference order |
+| `PCFG_Variant` | Whole-sentence surprisal (nats) of the variant order |
 | `Delta_PCFG` | Advantage: the `ML_Label`-oriented difference |
 
 > **Model artifacts.** `trigram`, `lstm`, and `adaptive_lstm` load large files

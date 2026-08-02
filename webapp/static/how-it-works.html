@@ -389,7 +389,7 @@
                <code>LSTM_Variant</code>. These always keep their true roles: the
                reference column is always the human-written order.</p>
             <p>Scorers that need the preceding sentence
-               (<code>information_status</code>, <code>adaptive_lstm</code>) receive
+               (Information Status, Adaptive LSTM) receive
                it from the corpus: in File mode, whatever sentence precedes it in
                your upload; in Sentence mode, your context box — and there, if you
                leave the box empty, those scorers are dropped from the run.</p>
@@ -470,18 +470,18 @@
       <div class="score-grid">
 
         <div class="score-tile">
-          <h3>Dependency length <span class="delta-chip">Delta_DL</span></h3>
+          <h3>Dependency Length <span class="delta-chip">Delta_DL</span></h3>
           <div class="badges"><span class="pill dir">↓ lower = more natural</span></div>
           <p>Measures how far apart grammatically related words sit. Each dependency
-             arc contributes its length minus one (Gildea &amp; Jaeger); the score is
-             a 5-element vector <code>[total_DL, last_DL, second_last_DL, last_len,
-             second_last_len]</code>, and the delta uses <code>total_DL</code>.
+             arc contributes its length minus one (Gildea &amp; Jaeger), and the score
+             is their total across the sentence — reported per order as
+             <code>DL_Reference</code> / <code>DL_Variant</code>.
              Shorter dependencies are easier to process — the core DLM prediction.</p>
           <p class="meta">Deterministic — computed from the parse, no training.</p>
         </div>
 
         <div class="score-tile">
-          <h3>Information status <span class="delta-chip">Delta_IS</span></h3>
+          <h3>Information Status <span class="delta-chip">Delta_IS</span></h3>
           <div class="badges">
             <span class="pill dir">↑ higher = more natural</span>
             <span class="pill ctx">needs context</span>
@@ -497,13 +497,13 @@
         </div>
 
         <div class="score-tile">
-          <h3>Constituency surprisal <span class="delta-chip">Delta_Surprisal</span></h3>
+          <h3>PCFG Modelblocks Incremental Surprisal <span class="delta-chip">Delta_Surprisal</span></h3>
           <div class="badges"><span class="pill dir">↓ lower = more natural</span></div>
           <p>Incremental syntactic surprisal in <em>bits</em>: how surprised a
              probabilistic phrase-structure grammar is by each word as it reads the
              sentence left to right, summed over the sentence.</p>
-          <p class="meta">Berkeley <code>hdtb_fresh</code> PCFG + the Taru
-             incremental parser; trained on the Hindi Dependency Treebank.</p>
+          <p class="meta">Taru synproc incremental parser; trained on the Hindi
+             Dependency Treebank.</p>
         </div>
 
         <div class="score-tile">
@@ -540,13 +540,15 @@
         </div>
 
         <div class="score-tile">
-          <h3>Berkeley PCFG <span class="delta-chip">Delta_PCFG</span></h3>
-          <div class="badges"><span class="pill dir">↑ higher = more natural</span></div>
-          <p>Whole-sentence <em>log-likelihood</em> under a Berkeley constituency
-             grammar — the odd one out: it is a probability, not a surprisal, so
-             <strong>higher</strong> means more natural. Distinct from the
-             constituency-surprisal scorer, which uses a different grammar and an
-             incremental (word-by-word) computation.</p>
+          <h3>DSPS PCFG Surprisal <span class="delta-chip">Delta_PCFG</span></h3>
+          <div class="badges"><span class="pill dir">↓ lower = more natural</span></div>
+          <p>Whole-sentence surprisal in <em>nats</em>: how improbable the
+             finished constituency structure is under a Berkeley grammar. The
+             parser reports a log-likelihood, which is negated on the way in —
+             surprisal is exactly <code>−log P</code>. It targets the same
+             quantity as the incremental scorer above, but reaches it in one shot
+             over the whole sentence rather than word by word, using a different
+             grammar and corpus.</p>
           <p class="meta">Berkeley Parser, DS-PS grammar (13,282 HUTB trees).</p>
         </div>
 
