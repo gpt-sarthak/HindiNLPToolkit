@@ -444,7 +444,9 @@ A single `pandas.DataFrame` (`pairs_df`) with exactly these columns:
 | `Variant_Sentence` | Variant surface text |
 
 Feature columns (`Ref_Features`, `Var_Features`, `Delta_DL`, `IS_*`, …) are added
-later by scorers — see the scoring section below.
+later by scorers — see the scoring section below. The web app also appends the
+recommended word order (`Recommended_Sentence` / `Recommended_Is_Reference` /
+`Recommended_Score`) to `variants.csv` when scorers run — see `recommend_column`.
 
 **File saved** (when `output_dir` is given)
 - `reference_variant_pairs.csv`
@@ -565,7 +567,8 @@ served at `/how-it-works` — intentionally not linked from the UI, and static
 - **Downloads per stage** (available as soon as each stage finishes):
   `parsed.conllu` (only for `.txt` input), `passed_sentences.csv`,
   `rejected_sentences.csv`, `summary.json`, `variants.csv`
-  (reference/variant pairs with `Sent_ID`/`Variant_ID` plus scorer columns),
+  (reference/variant pairs with `Sent_ID`/`Variant_ID` plus scorer columns and,
+  when scorers run, the `Recommended_*` word-order columns),
   `evaluation.json` (only when *Evaluate predictor accuracy* was ticked), and
   `recommendation.json` (Sentence mode — the recommended word order and the
   full candidate ranking).
@@ -983,6 +986,32 @@ Returns a JSON-serializable dict:
 }
 ```
 
+### `recommend_column(pairs_df, names)`
+
+```python
+from scoring import recommend_column
+
+rec_cols = recommend_column(scored_df, ["dependency_length", "lstm"])
+if rec_cols is not None:
+    scored_df = scored_df.join(rec_cols)
+```
+
+The same per-`Sent_ID` winner as `recommend_order`, but returned as three
+columns aligned to `pairs_df.index` and broadcast across every row of a
+sentence — cheap and bounded on a large corpus (it keeps only the winner per
+group, never the full candidate lists). Powers the recommendation columns the
+web app writes into `variants.csv` (both modes).
+
+| Column | Description |
+|---|---|
+| `Recommended_Sentence` | the most natural surface order (reference text when the original order won, else the winning variant's text) |
+| `Recommended_Is_Reference` | `True` when the reference order was judged most natural |
+| `Recommended_Score` | the winner's combined weighted-z score |
+
+Returns `None` when no named scorer contributes a rankable feature (nothing to
+rank → the caller omits the columns). Rows of a sentence with no scorable
+candidate get blank / `NaN` values.
+
 ### Pretrained weights (`scoring/models/recommender_weights.json`)
 
 A model cannot be fit on one sentence's few unlabeled candidates — so the
@@ -1019,8 +1048,10 @@ Sentence mode always writes a `recommendation.json` artifact (`status`
 `"ok"` / `"no_scorers"` / `"no_pairs"`) and renders the *Recommended word
 order* card: the winning order with a badge ("your original order" vs
 "reordered variant") and the full candidate table — one column per feature
-(↓/↑ = direction), best first, winner highlighted. File mode never writes it
-(use *Evaluate predictor accuracy* there instead).
+(↓/↑ = direction), best first, winner highlighted. File mode does not write the
+JSON/card (use *Evaluate predictor accuracy* there instead), but both modes
+append the `Recommended_*` columns (via `recommend_column`) to `variants.csv`
+whenever scorers run.
 
 ## Evaluation (`evaluation/`)
 

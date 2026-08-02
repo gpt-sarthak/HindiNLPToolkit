@@ -323,7 +323,8 @@
                   reordering.</li>
               <li><strong>Non-projective dependencies</strong> — rejected if any dependency
                   arcs cross; constituents can't be moved as clean blocks otherwise.</li>
-              <li><strong>Non-verbal root</strong> — the root must be verbal:
+              <li><strong>Non-verbal root</strong> — the root must carry a tag the
+                  chosen preset accepts as the clause head:
                   <code>VERB/AUX/VM/VAUX</code> under the Paninian preset,
                   <code>VERB/AUX/NOUN/ADJ/PROPN</code> under UD (copular sentences root
                   on the predicate nominal). This step also <em>extracts the preverbal
@@ -379,14 +380,19 @@
             <span class="twist"></span>
           </summary>
           <div class="flow-body">
+            <p>This step runs only if you ticked at least one scorer; with none
+               ticked the pairs table stays surface-only and no <code>Delta_*</code>
+               columns exist — which is what makes the Evaluate branch report
+               "no predictors".</p>
             <p>Each scorer you ticked appends its raw score for <em>both</em> orders of
                every pair as a column pair — e.g. <code>LSTM_Reference</code> /
                <code>LSTM_Variant</code>. These always keep their true roles: the
                reference column is always the human-written order.</p>
             <p>Scorers that need the preceding sentence
                (<code>information_status</code>, <code>adaptive_lstm</code>) receive
-               it from the corpus — in Sentence mode, from your context box; without a
-               context sentence they are skipped.</p>
+               it from the corpus: in File mode, whatever sentence precedes it in
+               your upload; in Sentence mode, your context box — and there, if you
+               leave the box empty, those scorers are dropped from the run.</p>
             <p>After all scorers have run, one <strong>central diff step</strong>
                computes every <code>Delta_*</code> column from <code>ML_Label</code>.
                No scorer computes its own difference, so every delta is oriented
@@ -437,8 +443,14 @@
                  so higher = more natural, and averaged with fitted weights. The
                  winner becomes the "Recommended word order" card. Details in
                  <a href="#rec-card">The recommendation score</a>.</p>
+              <p>The same per-sentence winner is written as three columns
+                 (<code>Recommended_Sentence</code>, <code>Recommended_Is_Reference</code>,
+                 <code>Recommended_Score</code>) into <code>variants.csv</code> in
+                 <strong>both</strong> modes — so File mode gets a recommendation for
+                 every sentence in the corpus, right beside the scores.</p>
               <div class="artifacts"><span class="lbl">writes</span>
                 <span class="artifact">recommendation.json</span>
+                <span class="artifact">variants.csv columns</span>
               </div>
             </div>
           </details>
@@ -479,7 +491,9 @@
              phrase precedes the new one, −1 when new precedes given, 0 otherwise.
              Speakers prefer given-before-new.</p>
           <p class="meta">Deterministic heuristic over the parse (Ranjan &amp; van
-             Schijndel 2024). Skipped without a context sentence.</p>
+             Schijndel 2024). File mode uses the preceding sentence of your
+             upload; Sentence mode uses your context box, and the scorer is
+             dropped if you leave it empty.</p>
         </div>
 
         <div class="score-tile">
@@ -520,7 +534,9 @@
           <p>The same LSTM after one quick learning step on the <em>preceding</em>
              sentence, so its expectations adapt to the local discourse before it
              scores the target (van Schijndel &amp; Linzen 2018).</p>
-          <p class="meta">Skipped without a context sentence.</p>
+          <p class="meta">Adapts on the preceding sentence of your upload in File
+             mode, or your context box in Sentence mode — where the scorer is
+             dropped if you leave it empty.</p>
         </div>
 
         <div class="score-tile">
@@ -597,7 +613,7 @@
          (information status, PCFG log-likelihood). When it does, the feature
          behaves as theory predicts.</p>
       <p><strong>Reference numbers</strong> on the full UD Hindi treebank
-         (193,474 pairs): dependency length ≈ 61.7%, information status ≈ 51%,
+         (193,474 pairs): dependency length ≈ 61.7%, information status ≈ 51.3%,
          combined ≈ 62.6%. Small uploads give noisy accuracy — that is why
          evaluation requires at least 200 pairs (below the floor the card reports
          "insufficient pairs") and why serious numbers need a full corpus.</p>
@@ -618,9 +634,11 @@
             candidates only</em>, and the sign is flipped where needed so that
             higher always means more natural.</li>
         <li>A candidate's combined score is the <strong>weighted mean</strong> of
-            those oriented z-scores. The weights are fixed in advance — fitted
-            offline on the Hindi HDTB treebank as the strength of each feature in a
-            standardized logistic regression. All seven built-ins have one:
+            those oriented z-scores, taken over the features that actually produced
+            a number for it — a feature that fails to compute (a blank
+            <code>NaN</code> cell, say when Java is unavailable for the PCFG
+            scorers) drops out of that candidate's average rather than counting as
+            zero. All seven built-ins carry a fitted weight:
             <code>Delta_Trigram</code> 1.882, <code>Delta_Adaptive</code> 1.822,
             <code>Delta_LSTM</code> 1.820, <code>Delta_PCFG</code> 0.896,
             <code>Delta_Surprisal</code> 0.872, <code>Delta_DL</code> 0.638,
@@ -629,11 +647,24 @@
         <li>The highest combined score wins. Exact ties go to your original
             order.</li>
       </ol>
+      <p style="margin-top:0.7rem"><strong>Where the weights come from.</strong>
+         Each is the strength of its feature in a standardized logistic regression,
+         fitted offline and then fixed. Their provenance is mixed:
+         <code>Delta_DL</code> comes from our own full-corpus fit on the bundled UD
+         Hindi treebank (193,474 pairs); the other six from the Ranjan &amp; van
+         Schijndel research feature table (92,299 pairs), with
+         <code>Delta_Surprisal</code> computed on those same sentences here.</p>
       <p style="margin-top:0.7rem"><strong>Reading the number.</strong> The score is
          <em>relative to this sentence's own candidate set</em>: 0 is an average
          candidate, positive is better than average, negative worse. It is not
          comparable across sentences or runs — only the ranking within one card is
          meaningful.</p>
+      <p style="margin-top:0.7rem"><strong>In File mode.</strong> There is no card,
+         but the same winning order is written per sentence into
+         <code>variants.csv</code> as <code>Recommended_Sentence</code> /
+         <code>Recommended_Is_Reference</code> / <code>Recommended_Score</code> —
+         one recommendation per source sentence, repeated on each of its variant
+         rows, so it scales to a whole corpus.</p>
     </section>
 
   </main>

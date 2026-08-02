@@ -25,7 +25,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from .base import Scorer
-from .recommend import recommend_order
+from .recommend import recommend_order, recommend_column
 # Re-exported for backward compatibility; the implementation now lives in the
 # top-level `helpers` package.
 from helpers import CorpusContext, build_corpus_context
@@ -143,6 +143,7 @@ __all__ = [
     "get_scorers",
     "apply_scorers",
     "recommend_order",
+    "recommend_column",
     "CorpusContext",
     "build_corpus_context",
 ]
