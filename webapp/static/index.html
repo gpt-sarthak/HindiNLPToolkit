@@ -154,7 +154,9 @@
   fieldset.scorers legend { font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); padding: 0 0.35rem; }
   .scorer-row { display: flex; gap: 0.55rem; align-items: flex-start; font-size: 0.82rem; padding: 0.25rem 0; }
   .scorer-row input { accent-color: var(--vermilion); margin-top: 0.2rem; }
-  .scorer-row .desc { color: var(--ink-soft); font-size: 0.74rem; display: block; }
+  /* pre-line renders the \n before "Feature in CSV:" as a break, while still
+     collapsing the ordinary wrapping whitespace. */
+  .scorer-row .desc { color: var(--ink-soft); font-size: 0.74rem; display: block; white-space: pre-line; }
   .scorer-row code { font-family: var(--mono); font-size: 0.8rem; }
   /* Scorer title — also used for the predictor name in the ranking table. */
   .scorer-row .sname, table.eval .sname { font-weight: 600; font-size: 0.86rem; color: var(--ink); display: block; }

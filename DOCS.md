@@ -826,7 +826,7 @@ are summed to a sentence total (bits).
 ### Built-in scorer: `trigram`
 
 - **Trained on:** Hindi text corpus
-- **Built with:** NLTK MLE trigram model (unsmoothed word counts)
+- **Built with:** NLTK MLE trigram model
 - **Notes:** smoothed by trigram→bigram→unigram backoff
 
 Trigram language-model surprisal (Ranjan & van Schijndel 2024), from a pickled
@@ -856,7 +856,7 @@ Columns added to `variants.csv`:
 ### Built-in scorer: `lstm`
 
 - **Trained on:** Hindi Wikipedia
-- **Built with:** 2-layer LSTM language model (embed 256 → LSTM 256, dropout 0.3)
+- **Built with:** 2-layer LSTM language model
 
 Base LSTM language-model surprisal, from a 2-layer LSTM (Embedding 256 → LSTM
 256 → Linear) trained on Hindi text (`scoring/models/base_model.pt` +
@@ -896,7 +896,7 @@ runs and the score equals the plain `lstm` surprisal.
 ### Built-in scorer: `berkeley_pcfg`
 
 - **Trained on:** HUTB — 13,282 DS-PS constituency trees
-- **Built with:** Berkeley Parser (PCFGLA), DS-PS grammar
+- **Built with:** Berkeley Parser, DS-PS grammar
 - **Notes:** surprisal in nats — lower = easier to process
 
 Berkeley **DS-PS** PCFG *whole-sentence surprisal*, scored with the Berkeley

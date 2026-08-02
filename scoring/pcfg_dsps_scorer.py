@@ -97,11 +97,11 @@ class PCFGDSPSScorer(Scorer):
     display_name = "DSPS PCFG Surprisal"
     description = (
         "How surprising each word order's full constituency structure is, "
-        "scored whole-sentence rather than word-by-word. "
+        "scored whole-sentence rather than word-by-word.\n"
         "Feature in CSV: Delta_PCFG."
     )
     trained_on = "HUTB - 13,282 DS-PS constituency trees"
-    built_with = "Berkeley Parser (PCFGLA), DS-PS grammar"
+    built_with = "Berkeley Parser, DS-PS grammar"
     notes = "surprisal in nats — lower = easier to process"
     higher_is_more_natural = {"Delta_PCFG": False}  # lower surprisal = more natural
 

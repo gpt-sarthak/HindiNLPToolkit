@@ -26,11 +26,11 @@ class LSTMScorer(Scorer):
     name = "lstm"
     display_name = "LSTM"
     description = (
-        "LSTM language-model surprisal (nats) of each word order. "
+        "LSTM language-model surprisal of each word order.\n"
         "Feature in CSV: Delta_LSTM."
     )
     trained_on = "Hindi Wikipedia"
-    built_with = "2-layer LSTM language model (embed 256 -> LSTM 256, dropout 0.3)"
+    built_with = "2-layer LSTM language model"
     higher_is_more_natural = {"Delta_LSTM": False}  # lower surprisal = more natural
 
     def score(self, pairs_df):

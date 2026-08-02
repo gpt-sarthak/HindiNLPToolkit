@@ -41,8 +41,9 @@ class AdaptiveLSTMScorer(Scorer):
     name = "adaptive_lstm"
     display_name = "Adaptive LSTM"
     description = (
-        "Adaptive LSTM surprisal (nats) of each word order, after adapting to "
-        "the preceding sentence. Feature in CSV: Delta_Adaptive."
+        "Adaptive LSTM surprisal of each word order, after adapting to "
+        "the preceding sentence.\n"
+        "Feature in CSV: Delta_Adaptive."
     )
     trained_on = "Hindi Wikipedia (base LSTM)"
     built_with = "base LSTM + one-step online adaptation"
