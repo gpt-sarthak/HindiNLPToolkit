@@ -61,7 +61,8 @@ class DependencyLengthScorer(Scorer):
     display_name = "Dependency Length"
     description = (
         "Total dependency length of each word order — the summed distance "
-        "between every word and its syntactic head. Feature in CSV: Delta_DL."
+        "between every word and its syntactic head.\n"
+        "Feature in CSV: Delta_DL."
     )
     trained_on = "Not trained (deterministic)"
     built_with = "Dependency-length minimization, per-arc length = arc_length - 1"

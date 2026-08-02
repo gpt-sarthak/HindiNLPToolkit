@@ -205,8 +205,8 @@ class InformationStatusScorer(Scorer):
     display_name = "Information Status"
     description = (
         "Information Status (givenness) of subject vs. object: +1 given-before-new, "
-        "-1 new-before-given, 0 otherwise. Feature in CSV: Delta_IS (positive = "
-        "reference adheres to given-before-new)."
+        "-1 new-before-given, 0 otherwise.\n"
+        "Feature in CSV: Delta_IS."
     )
     trained_on = "Not trained (deterministic)"
     built_with = "Given/new heuristic over the parse"
