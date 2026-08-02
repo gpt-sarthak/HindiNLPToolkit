@@ -32,9 +32,9 @@ def _evaluation_payload(pairs_df) -> dict:
     from evaluation import evaluate_pairs
     from scoring import get_scorers
 
-    # Present each delta under the name of the scorer that declared it.
+    # Present each delta under the title of the scorer that declared it.
     labels = {
-        col: scorer.name
+        col: (getattr(scorer, "display_name", "") or scorer.name)
         for scorer in get_scorers().values()
         for (col, _ref_fn, _var_fn) in scorer.deltas()
     }

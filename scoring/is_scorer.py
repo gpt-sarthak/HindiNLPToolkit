@@ -202,13 +202,14 @@ def _analyse_sentence(
 
 class InformationStatusScorer(Scorer):
     name = "information_status"
+    display_name = "Information Status"
     description = (
         "Information Status (givenness) of subject vs. object: +1 given-before-new, "
-        "-1 new-before-given, 0 otherwise. Advantage: Delta_IS (positive = "
+        "-1 new-before-given, 0 otherwise. Feature in CSV: Delta_IS (positive = "
         "reference adheres to given-before-new)."
     )
     trained_on = "Not trained (deterministic)"
-    built_with = "Given/new heuristic over the parse (Ranjan & van Schijndel 2024)"
+    built_with = "Given/new heuristic over the parse"
     needs_previous_sentence = True
     higher_is_more_natural = {"Delta_IS": True}  # given-before-new (+1) = more natural
 

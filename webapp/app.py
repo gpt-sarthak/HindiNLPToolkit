@@ -64,6 +64,8 @@ def list_plugins() -> list:
     return [
         {
             "name": scorer.name,
+            # Fallback baked in here so the UI never has to handle an empty one.
+            "display_name": getattr(scorer, "display_name", "") or scorer.name,
             "description": scorer.description,
             "trained_on": getattr(scorer, "trained_on", ""),
             "built_with": getattr(scorer, "built_with", ""),

@@ -3,13 +3,10 @@ scoring.dl_scorer
 =================
 Dependency-length (DL) feature scorer.
 
-Computes the 5-element dependency-length feature vector for both the reference
-and the variant order of every pair, following the dependency-length-
-minimization convention of Gildea & Jaeger (2015):
-
-    [total_DL, last_DL, second_last_DL, last_len, second_last_len]
-
-with per-arc length measured as ``(arc_length - 1)``.
+Computes the total dependency length of both the reference and the variant order
+of every pair, following the dependency-length-minimization convention of
+Gildea & Jaeger (2015): the sum of ``(arc_length - 1)`` over every non-root
+dependency arc.
 
 Why this is a context-aware scorer
 -----------------------------------
@@ -18,14 +15,14 @@ computes features.  To score a variant this scorer needs the reference parse
 (from ``context["passed"]``) and the variant's constituent order, which it
 recovers from the variant surface string by matching each reference
 constituent's token block (the same technique the IS scorer uses).  It then
-rebuilds the reordered, re-indexed dependency tree and extracts features.
+rebuilds the reordered, re-indexed dependency tree and measures it.
 
 Output
 ------
-Adds ``Ref_Features`` and ``Var_Features`` (the two 5-vectors, in true roles).
-The headline advantage ``Delta_DL`` (the ML_Label-oriented difference of
-``total_DL``) is produced by the central delta step in ``scoring.apply_scorers``
-via :meth:`deltas`.
+Adds ``DL_Reference`` and ``DL_Variant`` (the two total dependency lengths, in
+true roles).  The advantage ``Delta_DL`` (their ML_Label-oriented difference) is
+produced by the central delta step in ``scoring.apply_scorers`` via
+:meth:`deltas`.
 """
 
 from __future__ import annotations
@@ -37,11 +34,11 @@ import pandas as pd
 from helpers import rebuild_variant_tree
 from .base import Scorer
 
-_ZERO_VECTOR = [0, 0, 0, 0, 0]
+_OUTPUT_COLUMNS = ("DL_Reference", "DL_Variant")
 
 
 # ---------------------------------------------------------------------------
-# DL metric helpers (the generic variant reconstruction lives in helpers/)
+# DL metric helper (the generic variant reconstruction lives in helpers/)
 # ---------------------------------------------------------------------------
 
 def _calculate_sentence_total_dl(sentence) -> int:
@@ -55,41 +52,19 @@ def _calculate_sentence_total_dl(sentence) -> int:
     return total
 
 
-def _get_constituent_head_distance(constituent: List[dict], root_id: int) -> int:
-    """Dependency length between a constituent's attachment point and the root,
-    measured as (|position_gap| - 1).  0 if no direct attachment is found."""
-    for tok in constituent:
-        if isinstance(tok["id"], int) and tok["head"] == root_id:
-            return max(0, abs(tok["id"] - root_id) - 1)
-    return 0
-
-
-def _extract_features(sentence, constituents: List[List[dict]], root_id: int) -> List[int]:
-    """Build the 5-element DL feature vector
-    [total_DL, last_DL, second_last_DL, last_len, second_last_len]."""
-    total_dl = _calculate_sentence_total_dl(sentence)
-    last_dl = _get_constituent_head_distance(constituents[-1], root_id) if constituents else 0
-    second_last_dl = (
-        _get_constituent_head_distance(constituents[-2], root_id)
-        if len(constituents) >= 2 else 0
-    )
-    last_len = len(constituents[-1]) if constituents else 0
-    second_last_len = len(constituents[-2]) if len(constituents) >= 2 else 0
-    return [total_dl, last_dl, second_last_dl, last_len, second_last_len]
-
-
 # ---------------------------------------------------------------------------
 # The scorer
 # ---------------------------------------------------------------------------
 
 class DependencyLengthScorer(Scorer):
     name = "dependency_length"
+    display_name = "Dependency Length"
     description = (
-        "Dependency-length feature vectors [total_DL, last_DL, second_last_DL, "
-        "last_len, second_last_len] for each word order. Advantage: Delta_DL."
+        "Total dependency length of each word order — the summed distance "
+        "between every word and its syntactic head. Feature in CSV: Delta_DL."
     )
     trained_on = "Not trained (deterministic)"
-    built_with = "Gildea & Jaeger (2015) dependency-length formula (per-arc length = arc_length - 1)"
+    built_with = "Dependency-length minimization, per-arc length = arc_length - 1"
     higher_is_more_natural = {"Delta_DL": False}  # shorter dependencies = more natural
 
     def score(self, pairs_df: pd.DataFrame, context: Optional[dict] = None) -> pd.DataFrame:
@@ -97,8 +72,8 @@ class DependencyLengthScorer(Scorer):
         passed = (context or {}).get("passed")
 
         if df.empty or not passed:
-            df["Ref_Features"] = [list(_ZERO_VECTOR) for _ in range(len(df))]
-            df["Var_Features"] = [list(_ZERO_VECTOR) for _ in range(len(df))]
+            for col in _OUTPUT_COLUMNS:
+                df[col] = [0] * len(df)
             return df
 
         # sent_id -> (sentence TokenList, root_id, constituents)
@@ -107,41 +82,39 @@ class DependencyLengthScorer(Scorer):
             sid = item["sentence"].metadata.get("sent_id", "Unknown_ID")
             parse_by_id.setdefault(sid, (item["sentence"], item["root_id"], item["constituents"]))
 
-        ref_feats: Dict[str, List[int]] = {}   # cache per sentence
-        ref_col: List[List[int]] = []
-        var_col: List[List[int]] = []
+        ref_dl: Dict[str, int] = {}   # cache per sentence
+        ref_col: List[int] = []
+        var_col: List[int] = []
 
         for sent_id, variant_sentence in zip(df["Sent_ID"], df["Variant_Sentence"]):
             parse = parse_by_id.get(sent_id)
             if parse is None:
-                ref_col.append(list(_ZERO_VECTOR))
-                var_col.append(list(_ZERO_VECTOR))
+                ref_col.append(0)
+                var_col.append(0)
                 continue
 
             sentence, root_id, constituents = parse
 
-            if sent_id not in ref_feats:
-                ref_feats[sent_id] = _extract_features(sentence, constituents, root_id)
-            ref_col.append(list(ref_feats[sent_id]))
-            var_col.append(self._variant_features(sentence, root_id, constituents, str(variant_sentence)))
+            if sent_id not in ref_dl:
+                ref_dl[sent_id] = _calculate_sentence_total_dl(sentence)
+            ref_col.append(ref_dl[sent_id])
+            var_col.append(self._variant_dl(sentence, root_id, constituents, str(variant_sentence)))
 
-        df["Ref_Features"] = ref_col
-        df["Var_Features"] = var_col
+        df["DL_Reference"] = ref_col
+        df["DL_Variant"] = var_col
         return df
 
     @staticmethod
-    def _variant_features(sentence, root_id, constituents, variant_sentence) -> List[int]:
+    def _variant_dl(sentence, root_id, constituents, variant_sentence) -> int:
         """Rebuild the variant's reordered, re-indexed tree (via the shared
-        helper) and extract DL features from it."""
+        helper) and measure its total dependency length."""
         vt = rebuild_variant_tree(sentence, constituents, root_id, variant_sentence)
         if not vt.tokens:
-            return list(_ZERO_VECTOR)
-        return _extract_features(vt.tokens, vt.constituents, vt.root_id)
+            return 0
+        return _calculate_sentence_total_dl(vt.tokens)
 
     def deltas(self):
-        """Delta_DL = ML_Label-oriented difference of total_DL (feature[0])."""
-        return [(
-            "Delta_DL",
-            lambda row: row["Ref_Features"][0],
-            lambda row: row["Var_Features"][0],
-        )]
+        """Delta_DL = ML_Label-oriented difference of total dependency length."""
+        return [("Delta_DL",
+                 lambda row: row["DL_Reference"],
+                 lambda row: row["DL_Variant"])]

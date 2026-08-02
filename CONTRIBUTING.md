@@ -61,15 +61,17 @@ review and merge it.
 ## 3. Write the scorer
 
 Create one file in `scoring/`, e.g. `scoring/surprisal_scorer.py`. Subclass
-`Scorer`, set `name` + `description`, and implement `score`. That's it — the web
-app **auto-discovers** it on restart and shows it as a checkbox. No registration,
-no web code.
+`Scorer`, set `name` + `display_name` + `description`, and implement `score`.
+That's it — the web app **auto-discovers** it on restart and shows it as a
+checkbox. No registration, no web code.
 
 ```python
 from .base import Scorer
 
 class SurprisalScorer(Scorer):
-    name = "surprisal"                      # machine name + checkbox label
+    name = "surprisal"                      # machine name: API + registry key
+    display_name = "Constituency Surprisal" # title shown in the UI (falls back
+                                            # to `name` if you omit it)
     description = "One line shown in the web UI."
 
     def score(self, pairs_df):

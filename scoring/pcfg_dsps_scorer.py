@@ -1,11 +1,11 @@
 """
 scoring.pcfg_dsps_scorer
 ========================
-Berkeley DS-PS PCFG sentence log-likelihood scorer.
+Berkeley DS-PS PCFG whole-sentence surprisal scorer.
 
 For each (reference, variant) pair it computes the Berkeley Parser sentence
-log-likelihood of each word order under the HDTB DS-PS grammar and declares
-``Delta_PCFG``, oriented centrally by ``ML_Label``.
+log-likelihood of each word order under the HDTB DS-PS grammar, negates it into
+a surprisal, and declares ``Delta_PCFG``, oriented centrally by ``ML_Label``.
 
 Scoring runs the Berkeley Parser as one batched JVM call per ``score`` over the
 unique surfaces in the table::
@@ -21,10 +21,16 @@ is missing, Java is unavailable, or a sentence is unparseable, that score is
 
 Units / direction
 -----------------
-The value is a **log-likelihood** (higher = more probable), NOT a surprisal.
-This scorer is distinct from the ``surprisal`` scorer, which is *incremental*
-constituency surprisal from the Taru synproc engine on a different (hdtb_fresh)
-grammar.
+Surprisal is exactly ``-log P``, so the parser's log-likelihood is negated on
+the way in and the stored value is a **surprisal in nats** (lower = the grammar
+finds this order more probable, so easier).  That matches every other surprisal
+scorer's direction.
+
+This targets the *same quantity* as the ``surprisal`` scorer — the total
+surprisal of the sentence — but arrives at it differently: a different grammar
+(HUTB DS-PS vs an HDTB-derived model), a different engine (the Berkeley Java
+parser vs the Taru synproc C++ left-corner parser), nats vs bits, and a single
+whole-sentence figure rather than a sum of per-word increments.
 
 Discovered automatically by the scoring package — appears as the
 ``berkeley_pcfg`` checkbox in the UI.
@@ -49,8 +55,9 @@ def _available() -> bool:
 
 def _score_pcfg_live(sentences: List[str]) -> Dict[str, float]:
     """Run the Berkeley Parser on a batch of sentences, returning
-    ``{sentence: log_likelihood}``.  Sentences that fail to parse (or any
-    failure to invoke the parser) are simply absent from the result."""
+    ``{sentence: surprisal_in_nats}`` (the negated sentence log-likelihood).
+    Sentences that fail to parse (or any failure to invoke the parser) are
+    simply absent from the result."""
     if not _available() or not sentences:
         return {}
 
@@ -74,8 +81,12 @@ def _score_pcfg_live(sentences: List[str]) -> Dict[str, float]:
     for sent, line in zip(sentences, lines):
         try:
             log_prob = float(line.split("\t")[0])
-            if log_prob > -1e10:  # parser returns -inf for unparseable sentences
-                scores[sent] = log_prob
+            # Guard the RAW log-likelihood: the parser returns -inf for
+            # unparseable sentences, and those must be dropped *before* the
+            # negation below (negating -inf would yield +inf, i.e. a sentence
+            # that looks maximally surprising rather than unscored).
+            if log_prob > -1e10:
+                scores[sent] = -log_prob  # surprisal = -log P
         except (ValueError, IndexError):
             pass
     return scores
@@ -83,14 +94,16 @@ def _score_pcfg_live(sentences: List[str]) -> Dict[str, float]:
 
 class PCFGDSPSScorer(Scorer):
     name = "berkeley_pcfg"
+    display_name = "DSPS PCFG Surprisal"
     description = (
-        "Berkeley DS-PS PCFG sentence log-likelihood of each word order. "
-        "Advantage: Delta_PCFG."
+        "How surprising each word order's full constituency structure is, "
+        "scored whole-sentence rather than word-by-word. "
+        "Feature in CSV: Delta_PCFG."
     )
     trained_on = "HUTB - 13,282 DS-PS constituency trees"
-    built_with = "Berkeley Parser (PCFGLA) grammar, -sentence_likelihood"
-    notes = "log-likelihood — higher = more probable"
-    higher_is_more_natural = {"Delta_PCFG": True}  # log-likelihood: less negative = more natural
+    built_with = "Berkeley Parser (PCFGLA), DS-PS grammar"
+    notes = "surprisal in nats — lower = easier to process"
+    higher_is_more_natural = {"Delta_PCFG": False}  # lower surprisal = more natural
 
     def score(self, pairs_df):
         df = pairs_df.copy()

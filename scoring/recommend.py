@@ -97,6 +97,7 @@ def _feature_specs(names: List[str]) -> List[dict]:
             specs.append({
                 "delta": delta,
                 "scorer": scorer.name,
+                "display_name": getattr(scorer, "display_name", "") or scorer.name,
                 "higher_is_more_natural": bool(direction),
                 "weight": weights.get(delta, 1.0),
                 "ref_fn": ref_fn,
@@ -137,7 +138,8 @@ def recommend_order(pairs_df: pd.DataFrame, names: List[str]) -> dict:
     -------
     JSON-serializable dict::
 
-        {"features":  [{delta, scorer, higher_is_more_natural, weight}, ...],
+        {"features":  [{delta, scorer, display_name,
+                        higher_is_more_natural, weight}, ...],
          "sentences": [{sent_id,
                         recommended: {id, sentence, is_reference, score} | None,
                         candidates: [{id, sentence, is_reference,
@@ -149,7 +151,8 @@ def recommend_order(pairs_df: pd.DataFrame, names: List[str]) -> dict:
     """
     specs = _feature_specs(names)
     features = [
-        {k: s[k] for k in ("delta", "scorer", "higher_is_more_natural", "weight")}
+        {k: s[k] for k in ("delta", "scorer", "display_name",
+                           "higher_is_more_natural", "weight")}
         for s in specs
     ]
     result: dict = {"features": features, "sentences": []}

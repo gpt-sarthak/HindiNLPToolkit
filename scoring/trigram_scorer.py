@@ -83,13 +83,14 @@ def _sentence_surprisal(sentence: str, model) -> float:
 
 class TrigramScorer(Scorer):
     name = "trigram"
+    display_name = "Trigram"
     description = (
         "Trigram language-model surprisal (nats) of each word order. "
-        "Advantage: Delta_Trigram."
+        "Feature in CSV: Delta_Trigram."
     )
     trained_on = "Hindi text corpus"
-    built_with = "NLTK MLE trigram model"
-    notes = "trigram -> bigram -> unigram backoff smoothing"
+    built_with = "NLTK MLE trigram model (unsmoothed word counts)"
+    notes = "smoothed by trigram -> bigram -> unigram backoff"
     higher_is_more_natural = {"Delta_Trigram": False}  # lower surprisal = more natural
 
     def score(self, pairs_df):
