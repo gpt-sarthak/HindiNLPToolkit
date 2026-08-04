@@ -31,7 +31,16 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # generous enough for a full treebank
 
 ROOT_POS_PRESETS = {
     "paninian": None,  # library defaults: VERB / AUX / VM / VAUX
-    "ud": ["VERB", "AUX", "NOUN", "ADJ", "PROPN"],
+    # Verb-only, per Ranjan & van Schijndel (2024) §Data and Methods, criterion
+    # (d): "the root node for each tree is a finite verb with at least two
+    # preverbal dependents".  UD makes the *predicate* the root of a copular
+    # clause, so NOUN/ADJ/PROPN roots were once allowed here — but permuting the
+    # dependents of a nominal root is not the paper's construct (there is no
+    # root verb to be "preverbal" to).  On UD-HDTB this keeps the 87.6% of trees
+    # that are VERB-rooted and drops 1,546 / 13,306 copular ones.
+    # The *library* stays flexible: filter_bad_root(allowed_pos=...) still
+    # accepts any tag set, so callers who do want copular clauses can pass them.
+    "ud": ["VERB", "AUX"],
 }
 
 MEDIA_TYPES = {

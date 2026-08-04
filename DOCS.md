@@ -498,8 +498,16 @@ Works out of the box with default parameters. The default `allowed_root_pos`
 Two adjustments are typically needed:
 
 1. **`allowed_root_pos`** — UD marks copular predicates (adjective/noun) as
-   the syntactic root. Pass `allowed_root_pos=["VERB", "AUX", "NOUN", "ADJ", "PROPN"]`
-   to `filter_sentences` or `filter_bad_root` to recover these sentences.
+   the syntactic root, so copular clauses have no verbal root and are rejected
+   by the default. This is usually what you want: Ranjan & van Schijndel (2024)
+   require *"the root node for each tree is a finite verb"*, and permuting the
+   dependents of a nominal root is not the preverbal-ordering construct. The
+   **web app's `ud` preset is accordingly `["VERB", "AUX"]`** (verb-only; it
+   allowed `NOUN`/`ADJ`/`PROPN` before 2026-08-03 — on UD-HDTB that admitted
+   1,546 of 13,306 trees). If copular sentences *are* relevant to your study,
+   the library still lets you opt in: pass
+   `allowed_root_pos=["VERB", "AUX", "NOUN", "ADJ", "PROPN"]` to
+   `filter_sentences` or `filter_bad_root`.
 
 2. **`filter_punct_constituents`** fires on UD corpora where discourse
    connectors are followed by a comma that is separately attached to the root
