@@ -323,12 +323,14 @@
                   reordering.</li>
               <li><strong>Non-projective dependencies</strong> — rejected if any dependency
                   arcs cross; constituents can't be moved as clean blocks otherwise.</li>
-              <li><strong>Non-verbal root</strong> — the root must carry a tag the
-                  chosen preset accepts as the clause head:
+              <li><strong>Non-verbal root</strong> — the root must be a finite verb:
                   <code>VERB/AUX/VM/VAUX</code> under the Paninian preset,
-                  <code>VERB/AUX/NOUN/ADJ/PROPN</code> under UD (copular sentences root
-                  on the predicate nominal). This step also <em>extracts the preverbal
-                  constituents</em> — the units everything downstream permutes.</li>
+                  <code>VERB/AUX</code> under UD. Copular sentences ("this is my book")
+                  are therefore rejected under UD, which roots them on the predicate
+                  nominal rather than on a verb — permuting a noun's dependents is not
+                  the preverbal-ordering question this tool asks. This step also
+                  <em>extracts the preverbal constituents</em> — the units everything
+                  downstream permutes.</li>
               <li><strong>Punctuation-attached constituent</strong> — rejected if a bare
                   punctuation token hangs off the root as a constituent of its own.</li>
               <li><strong>Too few preverbal constituents</strong> — rejected with fewer than 2
