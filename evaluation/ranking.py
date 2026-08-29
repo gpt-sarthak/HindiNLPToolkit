@@ -20,6 +20,9 @@ out-of-fold predictions.  Coefficients come from a separate fit on the full
 z-scored data with ``C=1e6`` (effectively unregularised, matching R's
 ``glm()``); their *sign* says which direction the reference is preferred in.
 
+Confidence intervals around the accuracies are currently **suppressed** — see
+``INCLUDE_CI`` below.
+
     from evaluation import evaluate_pairs
 
     result = evaluate_pairs(pairs_df)          # every Delta_* column
@@ -36,6 +39,12 @@ import pandas as pd
 
 #: Random baseline for the balanced pairwise task.
 CHANCE = 0.5
+
+#: Emit ``ci_low`` / ``ci_high`` alongside each accuracy.  Off for now (the
+#: normal-approximation interval assumes independent rows, which pairs from the
+#: same sentence are not, so it reads narrower than the truth).  Flip to True to
+#: restore the keys — every consumer treats them as optional.
+INCLUDE_CI = False
 
 
 def _cv_accuracy(
@@ -83,9 +92,20 @@ def _full_fit_coefficients(X: np.ndarray, y: np.ndarray) -> np.ndarray:
 
 
 def _binomial_ci(accuracy: float, n: int) -> tuple:
-    """95% normal-approximation confidence interval, clamped to [0, 1]."""
+    """95% normal-approximation confidence interval, clamped to [0, 1].
+
+    Unreferenced while ``INCLUDE_CI`` is False — kept so re-enabling the interval
+    is a one-line flip rather than a rewrite."""
     half = 1.96 * math.sqrt(accuracy * (1.0 - accuracy) / n)
     return max(0.0, accuracy - half), min(1.0, accuracy + half)
+
+
+def _ci_fields(res: dict) -> dict:
+    """The confidence-interval keys, or nothing while ``INCLUDE_CI`` is off.
+
+    Splices them back at their original position when the flag is flipped, so
+    the key order of a result dict does not depend on the setting."""
+    return {k: res[k] for k in ("ci_low", "ci_high") if k in res}
 
 
 def _direction(coefficient: float) -> str:
@@ -140,7 +160,9 @@ def evaluate_pairs(
     delta, sorted by accuracy descending) and ``combined`` (all deltas
     together; ``None`` when fewer than two).  Accuracies are 0–1 fractions;
     chance is 0.5.  Rows with a missing value in a delta are dropped for that
-    predictor only (``n`` reports what remained).
+    predictor only (``n`` reports what remained).  ``ci_low`` / ``ci_high``
+    accompany each accuracy only while the module-level ``INCLUDE_CI`` is True —
+    treat them as optional keys.
 
     Raises
     ------
@@ -172,15 +194,17 @@ def evaluate_pairs(
         y = sub["ML_Label"].to_numpy(dtype=int)
         groups = sub["Sent_ID"].to_numpy() if group_by_sentence else None
         accuracy = _cv_accuracy(X, y, folds, seed, groups)
-        ci_low, ci_high = _binomial_ci(accuracy, len(sub))
         coefs = _full_fit_coefficients(X, y)
-        return {
+        res = {
             "n": int(len(sub)),
             "accuracy": round(float(accuracy), 4),
-            "ci_low": round(float(ci_low), 4),
-            "ci_high": round(float(ci_high), 4),
             "coefficients": {c: round(float(k), 4) for c, k in zip(cols, coefs)},
         }
+        if INCLUDE_CI:
+            ci_low, ci_high = _binomial_ci(accuracy, len(sub))
+            res["ci_low"] = round(float(ci_low), 4)
+            res["ci_high"] = round(float(ci_high), 4)
+        return res
 
     predictors = []
     for col in deltas:
@@ -191,8 +215,7 @@ def evaluate_pairs(
             "label": labels.get(col, col),
             "n": res["n"],
             "accuracy": res["accuracy"],
-            "ci_low": res["ci_low"],
-            "ci_high": res["ci_high"],
+            **_ci_fields(res),
             "coefficient": coefficient,
             "direction": _direction(coefficient),
         })
@@ -205,8 +228,7 @@ def evaluate_pairs(
             "deltas": list(deltas),
             "n": res["n"],
             "accuracy": res["accuracy"],
-            "ci_low": res["ci_low"],
-            "ci_high": res["ci_high"],
+            **_ci_fields(res),
             "coefficients": res["coefficients"],
         }
 
