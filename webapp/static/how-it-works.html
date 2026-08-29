@@ -526,9 +526,11 @@
           <div class="badges"><span class="pill dir">↓ lower = more natural</span></div>
           <p>Surprisal under a classic 3-gram language model: how unexpected each
              word is given the previous two, with backoff to shorter contexts for
-             unseen sequences. A simple, purely word-sequence baseline.</p>
-          <p class="meta">NLTK maximum-likelihood 3-gram with 3-level backoff
-             smoothing.</p>
+             unseen sequences. Every word counts, including the first two and the
+             sentence end. A simple, purely word-sequence baseline — and, on our
+             pairs, the single strongest one.</p>
+          <p class="meta">Katz backoff over Good-Turing discounted counts,
+             trained on 1M Hindi Wikipedia sentences. Reported in bits.</p>
         </div>
 
         <div class="score-tile">
@@ -657,7 +659,7 @@
             <code>NaN</code> cell, say when Java is unavailable for the PCFG
             scorers) drops out of that candidate's average rather than counting as
             zero. All seven built-ins carry a fitted weight:
-            <code>Delta_Trigram</code> 1.882, <code>Delta_Adaptive</code> 1.822,
+            <code>Delta_Trigram</code> 4.950, <code>Delta_Adaptive</code> 1.822,
             <code>Delta_LSTM</code> 1.820, <code>Delta_PCFG</code> 0.896,
             <code>Delta_Surprisal</code> 0.872, <code>Delta_DL</code> 0.638,
             <code>Delta_IS</code> 0.306. So better-validated predictors get a louder

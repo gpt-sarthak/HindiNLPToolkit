@@ -20,3 +20,8 @@ hi_hdtb-ud-train.conllu
 # EC2 deploy folder — holds the multi-GB image tarball + terraform state.
 # MUST be excluded or COPY . /app recurses the image into itself.
 deploy
+
+# Retired NLTK MLE trigram model (226 MB). Kept on disk for reference but no
+# longer loaded by anything — the trigram scorer now reads the memory-mapped
+# model in scoring/models/trigram_katz/, which must NOT be excluded.
+scoring/models/trigram.pkl
