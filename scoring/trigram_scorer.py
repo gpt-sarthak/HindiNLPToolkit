@@ -3,23 +3,29 @@ scoring.trigram_scorer
 ======================
 Trigram language-model surprisal scorer.
 
-Backed by a pickled NLTK MLE trigram model (``scoring/models/trigram.pkl``)
-trained on Hindi text.  For each (reference, variant) pair it computes the total
-sentence surprisal of each word order and declares ``Delta_Trigram``, oriented
-centrally by ``ML_Label``.
+Backed by a Katz-backoff model over Good-Turing discounted counts, trained on
+1M Hindi Wikipedia sentences with a 30k vocabulary and stored as ten
+memory-mapped files in ``scoring/models/trigram_katz/``.  For each
+(reference, variant) pair it computes the total sentence surprisal of each word
+order and declares ``Delta_Trigram``, oriented centrally by ``ML_Label``.
 
-Smoothing
----------
-The MLE model returns exactly 0.0 for unseen ngrams (no built-in smoothing), so
-per-word probability uses a three-level backoff:
+Scoring
+-------
+The sentence is padded with ``<s> <s>`` and scored through ``</s>``, so every
+word contributes — including the first two.  The input first goes through the
+model's training-time cleaning (``scoring/_katz_trigram.py:normalize``); that
+step is not optional, because the training corpus was split on ``[।!?]`` and a
+sentence-final danda therefore never appeared in training.
 
-    1. Trigram  P(w3 | w1, w2)
-    2. Bigram   P(w3 | w2)        if the trigram is unseen
-    3. Unigram  P(w3)             if the bigram is also unseen
-    4. Epsilon  1e-12             if the word is fully out-of-vocabulary
+Sentence surprisal = sum of per-position ``-log2 P`` over the padded sequence,
+i.e. the total is reported in **bits**.
 
-Sentence surprisal = sum of per-word ``-ln P`` over words with full trigram
-context (Ranjan & van Schijndel 2024).
+Smoothing is Katz backoff with data-derived backoff weights over Good-Turing
+discounted counts — a genuine probability distribution, so an unseen trigram
+falls back to the bigram and then the unigram rather than hitting a floor.
+
+The heavy lifting lives in ``scoring/_katz_trigram.py`` (private, no Scorer
+subclass, so plugin discovery skips it).
 
 Discovered automatically by the scoring package — appears as the ``trigram``
 checkbox in the UI.
@@ -27,75 +33,27 @@ checkbox in the UI.
 
 from __future__ import annotations
 
-import math
-import pickle
-from pathlib import Path
-from threading import Lock
+import pandas as pd
 
 from helpers import heartbeat
 
 from .base import Scorer
-
-_MODEL_PATH = Path(__file__).resolve().parent / "models" / "trigram.pkl"
-
-_model = None
-_lock = Lock()
-
-
-def _get_model():
-    """Lazy, thread-safe load of the 226 MB pickled MLE trigram model.
-    ``import nltk`` first so the classes the pickle references are registered
-    (and so a missing dependency fails with a clear error)."""
-    global _model
-    if _model is None:
-        with _lock:
-            if _model is None:
-                import nltk  # noqa: F401  (registers nltk.lm classes for unpickling)
-                with open(_MODEL_PATH, "rb") as fh:
-                    _model = pickle.load(fh)
-    return _model
-
-
-def _trigram_prob(model, w1, w2, w3) -> float:
-    """P(w3 | w1, w2) with trigram->bigram->unigram backoff; never returns 0
-    (minimum is the 1e-12 OOV epsilon)."""
-    prob = model.score(w3, [w1, w2])
-    if prob > 0:
-        return prob
-    prob = model.score(w3, [w2])
-    if prob > 0:
-        return prob
-    prob = model.score(w3)
-    if prob > 0:
-        return prob
-    return 1e-12
-
-
-def _sentence_surprisal(sentence: str, model) -> float:
-    """Total trigram surprisal (nats) = sum of -ln P over words with full
-    trigram context.  Sentences shorter than three tokens score 0.0."""
-    words = sentence.split()
-    if len(words) < 3:
-        return 0.0
-    total = 0.0
-    for i in range(2, len(words)):
-        total += -math.log(_trigram_prob(model, words[i - 2], words[i - 1], words[i]))
-    return total
 
 
 class TrigramScorer(Scorer):
     name = "trigram"
     display_name = "Trigram"
     description = (
-        "Trigram language-model surprisal of each word order.\n"
+        "Trigram language-model surprisal, scoring every word including the "
+        "sentence boundaries.\n"
         "Feature in CSV: Delta_Trigram."
     )
-    trained_on = "Hindi text corpus"
-    built_with = "NLTK MLE trigram model"
-    notes = "smoothed by trigram -> bigram -> unigram backoff"
+    trained_on = "1M Hindi Wikipedia sentences, 30k vocabulary"
+    built_with = "Katz backoff over Good-Turing discounted counts"
+    notes = "surprisal in bits; memory-mapped, so it loads instantly"
     higher_is_more_natural = {"Delta_Trigram": False}  # lower surprisal = more natural
 
-    def score(self, pairs_df):
+    def score(self, pairs_df: pd.DataFrame) -> pd.DataFrame:
         df = pairs_df.copy()
         if df.empty:
             df["Trigram_Reference"] = []
@@ -103,8 +61,12 @@ class TrigramScorer(Scorer):
             return df
 
         try:
-            model = _get_model()
+            from scoring._katz_trigram import get_lm
+
+            lm = get_lm()
         except Exception:
+            # Missing or unreadable model degrades to NaN rather than killing
+            # the run, matching the other model scorers.
             df["Trigram_Reference"] = [float("nan")] * len(df)
             df["Trigram_Variant"] = [float("nan")] * len(df)
             return df
@@ -115,7 +77,7 @@ class TrigramScorer(Scorer):
             heartbeat()          # cancellation checkpoint (no-op outside a job)
             key = str(text)
             if key not in cache:
-                cache[key] = _sentence_surprisal(key, model)
+                cache[key] = lm.surprisal(key)
             return cache[key]
 
         df["Trigram_Reference"] = [surprisal(s) for s in df["Reference_Sentence"]]

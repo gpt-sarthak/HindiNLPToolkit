@@ -931,33 +931,51 @@ are summed to a sentence total (bits).
 
 ### Built-in scorer: `trigram`
 
-- **Trained on:** Hindi text corpus
-- **Built with:** NLTK MLE trigram model
-- **Notes:** smoothed by trigram→bigram→unigram backoff
+- **Trained on:** 1M Hindi Wikipedia sentences, 30k vocabulary
+- **Built with:** Katz backoff over Good-Turing discounted counts
+- **Notes:** surprisal in bits; memory-mapped, so it loads instantly
 
-Trigram language-model surprisal (Ranjan & van Schijndel 2024), from a pickled
-NLTK MLE trigram model trained on Hindi (`scoring/models/trigram.pkl`). For each
-order it sums per-word surprisal `−ln P(wᵢ | wᵢ₋₂, wᵢ₋₁)` over the words that have
-full trigram context.
+Trigram language-model surprisal (Ranjan & van Schijndel 2024), from a
+Katz-backoff model stored as ten memory-mapped files in
+`scoring/models/trigram_katz/` (~148 MB, loads in ~0.05 s). For each order it
+sums per-position surprisal `−log₂ P(w₃ | w₁, w₂)` over the whole sentence.
 
-**Smoothing.** The MLE model has no built-in smoothing (an unseen ngram scores
-exactly 0), so per-word probability uses a three-level backoff, falling through
-to a small epsilon for fully out-of-vocabulary words:
+**Scoring.** The sentence is padded with `<s> <s>` and scored through `</s>`, so
+every word contributes — including the first two. The input first goes through
+the model's training-time cleaning
+(`scoring/_katz_trigram.py:normalize`), which is not optional: the training
+corpus was split on `[।!?]`, so a sentence-final danda never appeared in
+training and must be stripped rather than fed through as an unknown word.
 
-| Level | Probability | Used when |
-|---|---|---|
-| Trigram | `P(w₃ \| w₁, w₂)` | the trigram was seen |
-| Bigram | `P(w₃ \| w₂)` | the trigram is unseen |
-| Unigram | `P(w₃)` | the bigram is also unseen |
-| Epsilon | `1e-12` | the word is fully OOV |
+**Smoothing.** Katz backoff with data-derived backoff weights over Good-Turing
+discounted counts — a genuine probability distribution, so an unseen trigram
+falls back to the bigram and then the unigram.
 
 Columns added to `variants.csv`:
 
 | Column | Description |
 |---|---|
-| `Trigram_Reference` | Total trigram surprisal (nats) of the reference order |
-| `Trigram_Variant` | Total trigram surprisal (nats) of the variant order |
+| `Trigram_Reference` | Total trigram surprisal (bits) of the reference order |
+| `Trigram_Variant` | Total trigram surprisal (bits) of the variant order |
 | `Delta_Trigram` | Advantage: the `ML_Label`-oriented difference (central diff step) |
+
+**This scorer was replaced on 2026-08-29**, and the change is worth knowing
+about if you are comparing against older runs. The previous implementation was
+a pickled NLTK MLE model (`scoring/models/trigram.pkl`, 226 MB) that started
+its loop at the third word: it never padded with `<s>`, never scored `</s>`,
+and so skipped **11.1%** of a sentence's surprisal — concentrated at the
+sentence start, exactly where preverbal reordering moves material. On the app's
+own 48,864 Paninian pairs, ranking accuracy went **70.31% → 82.16%**; on the
+research corpus's 92,299 pairs, **77.09% → 89.52%**. Almost all of that is the
+scoring function rather than the model: the old pickle scored the new way
+reaches 82.14%, statistically indistinguishable from the new model's 82.16%.
+The full audit is in `trigram_compare/REPORT.md`.
+
+⚠ Two consequences. **Units changed from nats to bits**, so `Trigram_*` values
+in a `variants.csv` produced before that date are not comparable in magnitude
+with a newer one (ranking accuracy is invariant to the rescaling, so accuracy
+figures are). And `Delta_Trigram`'s recommender weight was refit on the same
+92,299 pairs, **1.8816 → 4.9497**.
 
 ### Built-in scorer: `lstm`
 
@@ -1031,8 +1049,9 @@ missing, Java is unavailable, or a sentence is unparseable, that score is `NaN`.
 | `Delta_PCFG` | Advantage: the `ML_Label`-oriented difference |
 
 > **Model artifacts.** `trigram`, `lstm`, and `adaptive_lstm` load large files
-> from `scoring/models/` (`trigram.pkl` 226 MB, `base_model.pt` 65 MB,
-> `vocab.pkl`); `berkeley_pcfg` needs `hdtb_dsps_grammar` (1.7 MB). These are
+> from `scoring/models/` (`trigram_katz/` 148 MB across ten memory-mapped
+> files, `base_model.pt` 65 MB, `vocab.pkl`); `berkeley_pcfg` needs
+> `hdtb_dsps_grammar` (1.7 MB). These are
 > kept out of git (too large for GitHub) and baked into the Docker image — place
 > them in `scoring/models/` for local runs. All loading is deferred to first use,
 > so plugin discovery and the rest of the pipeline are unaffected when a scorer
@@ -1135,7 +1154,7 @@ python -m evaluation.fit_weights --scorers dependency_length,information_status,
 
 The shipped file carries fitted weights for **all seven** built-in scorers
 (magnitude = each feature's standalone accuracy at ranking the attested order):
-`Delta_DL` 0.638 (61.7%), `Delta_Trigram` 1.882 (77.1%), `Delta_LSTM` 1.820
+`Delta_DL` 0.638 (61.7%), `Delta_Trigram` 4.950 (89.5%), `Delta_LSTM` 1.820
 (77.5%), `Delta_Adaptive` 1.822 (77.4%), `Delta_PCFG` 0.896 (63.4%),
 `Delta_Surprisal` 0.872 (59.4%), `Delta_IS` 0.306 (53.1%). Provenance is mixed:
 `Delta_DL` from the full-corpus fit on the committed `hi_hdtb-ud-train.conllu`

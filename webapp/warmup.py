@@ -3,7 +3,7 @@ webapp.warmup
 =============
 Background pre-warming of the heavy lazily-loaded models, so the *first* user
 job after a fresh start is fast (cold container: ~223 s for the first job vs
-~10 s warm — dominated by the 226 MB trigram unpickle and Stanza init).
+~10 s warm — dominated by Stanza init and the LSTM checkpoint).
 
 Runs on a daemon thread started from the FastAPI lifespan hook, so the server
 binds and serves immediately while models load behind it.  Targets are warmed
@@ -42,13 +42,14 @@ def _warm_lstm() -> None:
 
 
 def _warm_trigram() -> None:
-    from scoring.trigram_scorer import _get_model
+    from scoring._katz_trigram import get_lm
 
-    _get_model()
+    get_lm()
 
 
-# Cheap first: Stanza serves Sentence-mode parses immediately, the LSTM loads
-# in seconds, and the multi-minute trigram unpickle goes last.
+# Cheap first: Stanza serves Sentence-mode parses immediately, then the LSTM
+# checkpoint.  The trigram model is memory-mapped and effectively free, but it
+# is warmed anyway so a first job never pays even that.
 _TARGETS = [
     ("stanza", _warm_stanza),
     ("lstm", _warm_lstm),
