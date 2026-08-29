@@ -95,7 +95,7 @@ sents = load_input("राम घर जाता है।")       # raw Hindi 
 
 ---
 
-### `filter_sentences(sentences, allowed_root_pos=None, min_phrases=2, output_dir=None)`
+### `filter_sentences(sentences, allowed_root_pos=None, min_phrases=2, output_dir=None, subject_deprels=None, object_deprels=None, require_core_args=True)`
 
 Applies all seven linguistic filters in sequence. A sentence must pass **all**
 filters to be included. Internally calls the seven individual filter functions
@@ -106,9 +106,12 @@ in order — no logic is duplicated.
 | Parameter | Default | Description |
 |---|---|---|
 | `sentences` | — | `List[TokenList]` from `load_input()`. |
-| `allowed_root_pos` | `None` | POS tags accepted on the dependency root (filter 5). `None` uses `["VERB", "AUX", "VM", "VAUX"]`. Extend for UD corpora with copular constructions, e.g. `["VERB", "AUX", "NOUN", "ADJ"]`. |
+| `allowed_root_pos` | `None` | POS tags accepted on the dependency root (filter 5). `None` uses `["VERB", "AUX", "VM", "VAUX"]`. Extend to `["VERB", "AUX", "NOUN", "ADJ", "PROPN"]` only if copular clauses are relevant to your study — see the UD note below. |
 | `min_phrases` | `2` | Minimum preverbal constituents required (filter 7). Must be ≥ 1. |
 | `output_dir` | `None` | If given, writes `passed_sentences.csv` and `rejected_sentences.csv` to this directory. |
+| `subject_deprels` | `None` | Relations counted as a subject (filter 7). `None` uses `("nsubj", "nsubj:pass", "k1")` — both schemes at once, safe because they share no label. |
+| `object_deprels` | `None` | Relations counted as an object (filter 7). `None` uses `("obj", "iobj", "k2", "k4")`; indirect objects count. Pass `["obj", "k2"]` for direct objects only. |
+| `require_core_args` | `True` | Require a preverbal subject **and** object (filter 7). `False` restores count-only filtering. |
 
 #### Filter pipeline
 
@@ -120,7 +123,7 @@ in order — no logic is duplicated.
 | 4 | `filter_non_projective` | Any pair of crossing dependency arcs | Non-projective structures cannot be represented by block permutations |
 | 5 | `filter_bad_root` | Missing root, or root POS not in `allowed_root_pos` | Preverbal constituent extraction is only defined for verb-headed clauses |
 | 6 | `filter_punct_constituents` | Any preverbal constituent whose head attachment to root has `deprel == "punct"` | A bare comma or punctuation mark treated as a free-floating block produces broken variants in every permutation |
-| 7 | `filter_min_phrases` | Fewer than `min_phrases` preverbal constituents | Need ≥ 2 to produce any non-trivial permutation |
+| 7 | `filter_min_phrases` | Fewer than `min_phrases` preverbal constituents, **or** no preverbal subject / no preverbal object | Need ≥ 2 to produce any non-trivial permutation, and criterion (a) of Ranjan & van Schijndel (2024) requires "well-defined subjects and objects" — a subject plus three obliques has nothing to reorder against |
 
 #### Returns
 
@@ -337,15 +340,36 @@ passed, rej = filter_punct_constituents(sentences)
 
 ---
 
-#### `filter_min_phrases(sentences_or_items, min_phrases=2, allowed_pos=None)`
+#### `filter_min_phrases(sentences_or_items, min_phrases=2, allowed_pos=None, subject_deprels=None, object_deprels=None, require_core_args=True)`
 
-Removes sentences that have fewer than `min_phrases` preverbal constituents.
-At least two are needed to produce any non-trivial permutation.
+Removes sentences whose preverbal domain cannot support the research question.
+Two conditions:
+
+1. **Count** — fewer than `min_phrases` preverbal constituents; at least two are
+   needed to produce any non-trivial permutation.
+2. **Core arguments** — the constituents must include both a subject and an
+   object. This is criterion (a) of Ranjan & van Schijndel (2024), *"the trees
+   contain both well-defined subjects and objects"*, and it is what makes the
+   SOV/OSV contrast meaningful: a subject plus three obliques satisfies the count
+   but has no object to move.
 
 | Parameter | Default | Description |
 |---|---|---|
 | `min_phrases` | `2` | Minimum number of preverbal constituents required. Must be ≥ 1. |
 | `allowed_pos` | `None` | Only used when input is `List[TokenList]`. POS tags accepted on the root. |
+| `subject_deprels` | `None` | Relations counted as a subject. `None` uses `("nsubj", "nsubj:pass", "k1")`. |
+| `object_deprels` | `None` | Relations counted as an object. `None` uses `("obj", "iobj", "k2", "k4")`. |
+| `require_core_args` | `True` | `False` restores the historical count-only behaviour. |
+
+The deprel defaults union both annotation schemes, which is safe because UD and
+Paninian share no label and are never mixed in one call — the same reasoning
+behind the default root-POS tuple. `k1s` (predicative complement) and `pof`
+(conjunct-verb nominal) are deliberately **not** counted.
+
+Rejection `Reason` is `"Fewer than N preverbal constituent(s)"` for a count
+failure, or `"Missing preverbal subject"` / `"Missing preverbal object"` /
+`"Missing preverbal subject and object"`. `summarize()` groups all of them into
+the single `filter_order` entry *"Too few phrases or missing subject/object"*.
 
 **Accepts** `List[TokenList]` or `List[Dict]` (output of `filter_bad_root` /
 `filter_punct_constituents`). When given `List[Dict]`, pre-computed
@@ -360,6 +384,12 @@ passed, rej = filter_min_phrases(items, min_phrases=2)
 
 # Stricter threshold
 passed, rej = filter_min_phrases(items, min_phrases=3)
+
+# Direct objects only (drops iobj / k4)
+passed, rej = filter_min_phrases(items, object_deprels=["obj", "k2"])
+
+# Historical count-only behaviour
+passed, rej = filter_min_phrases(items, require_core_args=False)
 
 # Independent use on raw sentences
 passed, rej = filter_min_phrases(sentences)

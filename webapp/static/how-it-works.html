@@ -333,8 +333,13 @@
                   downstream permutes.</li>
               <li><strong>Punctuation-attached constituent</strong> — rejected if a bare
                   punctuation token hangs off the root as a constituent of its own.</li>
-              <li><strong>Too few preverbal constituents</strong> — rejected with fewer than 2
-                  preverbal constituents, since no nontrivial reordering would exist.</li>
+              <li><strong>Too few phrases, or missing subject/object</strong> — rejected with
+                  fewer than 2 preverbal constituents, since no nontrivial reordering would
+                  exist; and rejected when those constituents don't include both a
+                  <em>subject</em> and an <em>object</em>. A sentence like "it stays open all
+                  week from 2pm to 8pm" is a subject plus three time/place phrases — plenty to
+                  permute, but no object, so reordering it says nothing about
+                  subject–object order.</li>
             </ol>
             <div class="artifacts"><span class="lbl">writes</span>
               <span class="artifact">passed_sentences.csv</span>
