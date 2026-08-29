@@ -894,10 +894,15 @@ function renderEvaluation(ev) {
 
   const accCell = (acc, lo, hi) => {
     const pct = acc * 100;
-    const half = ((hi - lo) / 2) * 100;
     const left = Math.min(pct, 50);
     const width = Math.abs(pct - 50);
-    return `${pct.toFixed(1)}% <span class="eval-dir">±${half.toFixed(1)}</span>
+    // The confidence interval is optional: evaluation.json omits ci_low/ci_high
+    // while INCLUDE_CI is off in evaluation/ranking.py, but older artifacts
+    // still carry them.  Show the margin only when both bounds are present.
+    const ci = Number.isFinite(lo) && Number.isFinite(hi)
+      ? `<span class="eval-dir">±${(((hi - lo) / 2) * 100).toFixed(1)}</span>`
+      : "";
+    return `${pct.toFixed(1)}% ${ci}
       <div class="acc-bar"><i style="left:${left}%;width:${width}%"></i><span class="chance"></span></div>`;
   };
 

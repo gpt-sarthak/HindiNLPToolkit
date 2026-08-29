@@ -1128,13 +1128,12 @@ Returns a dict (accuracies as 0–1 fractions):
   "n_pairs": 3000, "folds": 10, "seed": 42,
   "predictors": [                      # one per delta, sorted by accuracy desc
     {"delta": "Delta_DL", "label": "dependency_length", "n": 3000,
-     "accuracy": 0.61, "ci_low": 0.59, "ci_high": 0.63,
-     "coefficient": -0.42,
+     "accuracy": 0.61, "coefficient": -0.42,
      "direction": "reference preferred when this value is lower"},
     ...
   ],
   "combined": {                        # all deltas in one model; None if < 2
-    "deltas": [...], "n": ..., "accuracy": ..., "ci_low": ..., "ci_high": ...,
+    "deltas": [...], "n": ..., "accuracy": ...,
     "coefficients": {"Delta_DL": -0.40, ...}
   }
 }
@@ -1145,9 +1144,17 @@ only (`n` reports what remained); the combined model uses rows complete across
 all included deltas. Coefficients come from an effectively unregularised fit on
 the full z-scored data; the *sign* is the reliable part — negative means the
 reference is preferred when that feature's value is lower (expected for
-surprisals and dependency length). The 95% CI is a normal-approximation
-binomial interval. Raises `ValueError` when `ML_Label`/deltas are missing or a
-predictor has fewer usable rows than folds.
+surprisals and dependency length). Raises `ValueError` when `ML_Label`/deltas
+are missing or a predictor has fewer usable rows than folds.
+
+**Confidence intervals are currently switched off.** Each accuracy used to carry
+`ci_low` / `ci_high` from a 95% normal-approximation binomial interval, but that
+formula assumes independent rows and ours are not — one sentence contributes up
+to 99 pairs sharing a reference and a parse, so the reported band came out
+narrower than the truth. The keys are suppressed until the interval is computed
+in a way that respects that clustering. Set `INCLUDE_CI = True` in
+`evaluation/ranking.py` to restore them; every consumer treats the two keys as
+optional, so nothing else needs changing.
 
 **Every scorer that declares `deltas()` is automatically a predictor** — there
 is nothing extra to implement when adding a scorer.
@@ -1157,9 +1164,10 @@ is nothing extra to implement when adding a scorer.
 Tick **Evaluate predictor accuracy** (File mode only; Sentence mode never
 evaluates — one sentence cannot yield enough pairs). The job then writes an
 `evaluation.json` artifact and the UI renders a *Ranking accuracy* card:
-combined model first, then each predictor with its accuracy, ±CI, pair count,
+combined model first, then each predictor with its accuracy, pair count,
 a bar anchored at the 50% chance line, and the coefficient's plain-English
-direction. Fewer than **200 pairs** (or no scorer deltas) produces a
+direction. (A `±` margin appears beside the accuracy only for artifacts that
+carry `ci_low`/`ci_high` — see the note above.) Fewer than **200 pairs** (or no scorer deltas) produces a
 `status: "insufficient_pairs"` / `"no_predictors"` stub and an explanatory
 note instead of numbers — the threshold lives in `webapp/pipeline.py`
 (`MIN_EVAL_PAIRS`), not in the library.

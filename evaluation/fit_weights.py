@@ -23,6 +23,13 @@ Usage (from the project root, venv active)::
 Defaults fit dependency_length + information_status on the committed UD HDTB
 corpus (both deterministic — no model files needed).  Rerun with more scorers
 once their features have been scored corpus-wide (trigram/lstm/pcfg are slow).
+
+Note on reproducing the committed ``Delta_DL`` (0.6377, n=193474): that fit
+predates the 2026-08-03 verb-only root change, when the ``ud`` preset here
+still admitted NOUN/ADJ/PROPN roots.  Re-running now filters out HDTB's ~1,546
+copular trees, so it draws on a smaller corpus and will land near but not on
+the committed value.  The committed number is a documented historical fit, not
+a target to reproduce exactly.
 """
 
 from __future__ import annotations
@@ -40,10 +47,13 @@ DEFAULT_SCORERS = "dependency_length,information_status"
 DEFAULT_OUT = "scoring/models/recommender_weights.json"
 
 # Same presets the webapp uses (webapp/app.py ROOT_POS_PRESETS); duplicated
-# here so the library-side script does not import from webapp/.
+# here so the library-side script does not import from webapp/.  Keep the two
+# in step: they drifted once (this copy kept NOUN/ADJ/PROPN for two days after
+# the app went verb-only), which would have refit the weights on a corpus the
+# app no longer accepts.
 ROOT_POS_PRESETS = {
     "paninian": None,  # library defaults: VERB / AUX / VM / VAUX
-    "ud": ["VERB", "AUX", "NOUN", "ADJ", "PROPN"],
+    "ud": ["VERB", "AUX"],
 }
 
 
