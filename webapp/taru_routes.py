@@ -25,8 +25,10 @@ import threading
 from pathlib import Path
 from typing import Dict
 
-from fastapi import APIRouter, Body, Request, HTTPException
+from fastapi import APIRouter, Body, Depends, Request, HTTPException, Response
 from fastapi.responses import FileResponse, HTMLResponse
+
+from webapp import ratelimit
 
 # --- locate the bundled Taru workspace and make it importable ----------------
 # Expected layout inside the toolkit repo:
@@ -66,14 +68,34 @@ def models() -> dict:
 
 # ---------------- parse ----------------
 
+# One request parses every line it is given, and each line is a fresh JVM plus
+# a synproc process with no timeout on either (taru_backend.parse_one).  A rate
+# limit alone would not contain that -- a single request could launch thousands
+# -- so the line count is capped too.  The SPA only ever sends one sentence.
+MAX_PARSE_LINES = 20
+
+
 @router.post("/parse")
-def parse(payload: dict = Body(...)) -> object:
+def parse(
+    payload: dict = Body(...),
+    _keys: tuple = Depends(
+        ratelimit.guard(
+            "taru_parse",
+            session_limit=ratelimit.TARU_PARSE_SESSION_PER_MIN,
+            ip_limit=ratelimit.TARU_PARSE_IP_PER_MIN,
+        )
+    ),
+) -> object:
     raw = (payload.get("sentence") or "").strip()
     model_id = payload.get("model", "hdtb")
     want_surp = bool(payload.get("surprisal", True))
     input_type = payload.get("input_type", "sentence")
     if not raw:
         raise HTTPException(400, "empty input")
+    if input_type != "dependency" and len(raw.splitlines()) > MAX_PARSE_LINES:
+        raise HTTPException(
+            400, f"Too many lines to parse at once (limit {MAX_PARSE_LINES})."
+        )
     try:
         if input_type == "dependency":
             results = tb.parse_dependency(raw, model_id, want_surp)
@@ -101,7 +123,16 @@ def _train_job(job_id: str, text: str, name: str, input_type: str) -> None:
 
 
 @router.post("/train")
-async def train(request: Request) -> dict:
+async def train(
+    request: Request,
+    _keys: tuple = Depends(
+        ratelimit.guard(
+            "taru_train",
+            session_limit=ratelimit.TARU_TRAIN_SESSION_PER_MIN,
+            ip_limit=ratelimit.TARU_TRAIN_IP_PER_MIN,
+        )
+    ),
+) -> dict:
     """Accept either a JSON body {text,name,input_type} (what taru_viewer.html
     sends) or a multipart form with an uploaded file."""
     text, name, input_type = "", "", "sentence"

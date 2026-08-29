@@ -41,6 +41,11 @@ _lock = threading.Lock()
 @dataclass
 class Job:
     job_id: str
+    # Who submitted this, for the in-flight caps in try_create_job.  Both are
+    # opaque (the session one is already hashed); neither reaches to_dict(), so
+    # nothing about the caller is exposed through the status API.
+    session_key: str = ""
+    ip_key: str = ""
     status: str = "queued"          # queued | running | done | failed | cancelled
     stage: str = ""                 # parse | filter | variants | complete
     error: str = ""
@@ -78,13 +83,70 @@ def job_dir(job_id: str) -> Path:
     return OUTPUT_ROOT / job_id
 
 
-def create_job() -> Job:
+def create_job(session_key: str = "", ip_key: str = "") -> Job:
     _cleanup_expired()
-    job = Job(job_id=uuid.uuid4().hex[:12])
+    job = Job(job_id=uuid.uuid4().hex[:12], session_key=session_key, ip_key=ip_key)
     job_dir(job.job_id).mkdir(parents=True, exist_ok=True)
     with _lock:
         _jobs[job.job_id] = job
     return job
+
+
+def try_create_job(
+    session_key: str,
+    ip_key: str,
+    *,
+    session_max: int,
+    ip_max: int,
+) -> Optional[Job]:
+    """Create a job only if the caller is under both in-flight caps.
+
+    Returns ``None`` when either cap is already met, so the caller can answer
+    429 without having created anything.
+
+    The count and the insert share **one** ``_lock`` acquisition on purpose.
+    Counting under the lock, releasing, then inserting under it again would
+    still be a check-then-act race: two simultaneous submissions from one
+    session could both observe zero in flight and both register a job.  Since
+    the whole point of the cap is to stop one caller occupying both workers,
+    that race would defeat it exactly when it matters.
+
+    A cap of ``0`` or less means unlimited (used when limiting is switched off).
+    """
+    _cleanup_expired()
+    active = ("queued", "running")
+    with _lock:
+        if session_max > 0:
+            in_flight = sum(
+                1 for j in _jobs.values()
+                if j.session_key == session_key and j.status in active
+            )
+            if in_flight >= session_max:
+                return None
+        if ip_max > 0:
+            in_flight = sum(
+                1 for j in _jobs.values()
+                if j.ip_key == ip_key and j.status in active
+            )
+            if in_flight >= ip_max:
+                return None
+        job = Job(job_id=uuid.uuid4().hex[:12], session_key=session_key, ip_key=ip_key)
+        _jobs[job.job_id] = job
+    job_dir(job.job_id).mkdir(parents=True, exist_ok=True)
+    return job
+
+
+def discard(job: Job) -> None:
+    """Drop a job that was registered but never submitted.
+
+    Validation can still fail after the job exists (an oversized upload, an
+    empty file), and such a job would otherwise sit at ``queued`` forever:
+    _cleanup_expired only reaps terminal jobs, so it would count against its
+    caller's in-flight cap for the life of the process.
+    """
+    with _lock:
+        _jobs.pop(job.job_id, None)
+    shutil.rmtree(job_dir(job.job_id), ignore_errors=True)
 
 
 def get_job(job_id: str) -> Optional[Job]:

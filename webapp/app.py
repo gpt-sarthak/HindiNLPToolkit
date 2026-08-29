@@ -14,20 +14,30 @@ Interactive API docs: http://localhost:8000/docs
 from __future__ import annotations
 
 import io
+import os
 import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from webapp import jobs
+from webapp import jobs, ratelimit
 from webapp.pipeline import run_job
 from webapp.warmup import start_background_warmup
 
 ALLOWED_SUFFIXES = {".txt", ".conllu"}
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # generous enough for a full treebank
+# 250 MB: five times the largest treebank we ship (hi_hdtb-ud-train.conllu is
+# 46.5 MB), so any realistic corpus fits, while still bounding how long a single
+# upload can occupy one of the two workers.  Overridable without a rebuild.
+MAX_UPLOAD_BYTES = int(os.environ.get("HNT_MAX_UPLOAD_BYTES", 250 * 1024 * 1024))
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
+# Sentence mode is one sentence plus one context sentence; anything beyond this
+# is a mistake or an abuse.  Starlette caps non-file form fields at 1 MB anyway,
+# but that surfaces as FastAPI's generic "error parsing the body" 400 — this cap
+# is reached first and says something useful.
+MAX_TEXT_CHARS = 2000
 
 ROOT_POS_PRESETS = {
     "paninian": None,  # library defaults: VERB / AUX / VM / VAUX
@@ -65,6 +75,95 @@ app = FastAPI(
 )
 
 
+class MaxBodySizeMiddleware:
+    """Reject an oversized upload from Content-Length, before anything reads it.
+
+    This is the one piece of middleware in the app, and it exists because a
+    check inside ``create_job`` cannot be early enough.  FastAPI resolves
+    File/Form parameters by calling ``await request.form()`` (fastapi/routing.py)
+    *before* it solves dependencies or enters the handler, and Starlette's
+    multipart parser applies no size limit at all to file parts — it spools them
+    straight to a temporary file.  So by the time any route code runs, the whole
+    body has already been received.  Only an ASGI middleware, which runs before
+    routing, can refuse it up front.
+
+    Scoped to exactly one method+path, so it can never touch another endpoint —
+    in particular never the 1.5 s status poller.  Content-Length is
+    client-supplied and may be absent or wrong; this is a cheap fast path, and
+    ``_stream_upload`` remains the authoritative check.
+    """
+
+    # Multipart framing (boundaries, the other form fields) rides along with the
+    # file, so allow some slack before calling a request oversized.
+    SLACK_BYTES = 64 * 1024
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] == "http"
+            and scope.get("method") == "POST"
+            and scope.get("path") == "/api/jobs"
+        ):
+            for name, value in scope.get("headers", []):
+                if name == b"content-length":
+                    try:
+                        too_big = int(value) > MAX_UPLOAD_BYTES + self.SLACK_BYTES
+                    except ValueError:
+                        too_big = False
+                    if too_big:
+                        response = JSONResponse({"detail": _too_large_message()}, status_code=413)
+                        await response(scope, receive, send)
+                        return
+                    break
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(MaxBodySizeMiddleware)
+# Added last, so it wraps the body guard too and every reply carries the cookie
+# — including the 413 above and the limiter's own 429.
+app.add_middleware(ratelimit.SessionMiddleware)
+
+
+def _too_large_message() -> str:
+    return f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit."
+
+
+async def _stream_upload(file: UploadFile, dest: Path) -> tuple[bool, bool]:
+    """Copy an upload to disk in bounded chunks, refusing to exceed the cap.
+
+    Returns ``(within_cap, has_content)``.  On a cap breach the partial file is
+    removed and ``(False, False)`` comes back.  Counting as we go is what makes
+    the limit real: Content-Length can be absent or understated, so the
+    middleware above is only a fast path, and this loop is what actually bounds
+    what we write and what we hold in memory.
+
+    ``has_content`` tracks non-whitespace as it streams, preserving the old
+    ``content.strip()`` check without ever holding the whole file.
+    """
+    total = 0
+    has_content = False
+    try:
+        with dest.open("wb") as out:
+            while True:
+                chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    break
+                has_content = has_content or bool(chunk.strip())
+                out.write(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            dest.unlink(missing_ok=True)
+            return False, False
+        return True, has_content
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
+
+
 @app.get("/api/plugins")
 def list_plugins() -> list:
     """Scorer plugins discovered in the scoring/ package."""
@@ -96,6 +195,13 @@ async def create_job(
     scorers: str = Form(""),
     evaluate: bool = Form(False),
     recommend: bool = Form(True),
+    _keys: tuple = Depends(
+        ratelimit.guard(
+            "jobs",
+            session_limit=ratelimit.JOBS_SESSION_PER_MIN,
+            ip_limit=ratelimit.JOBS_IP_PER_MIN,
+        )
+    ),
 ) -> dict:
     """
     Start a pipeline job from either an uploaded corpus *or* typed sentences.
@@ -140,8 +246,27 @@ async def create_job(
     unknown = set(scorer_names) - set(get_scorers())
     if unknown:
         raise HTTPException(400, f"Unknown scorer(s): {sorted(unknown)}.")
+    if len(text) > MAX_TEXT_CHARS:
+        raise HTTPException(400, f"Sentence is too long (limit {MAX_TEXT_CHARS} characters).")
+    if len(context_text) > MAX_TEXT_CHARS:
+        raise HTTPException(
+            400, f"Context sentence is too long (limit {MAX_TEXT_CHARS} characters)."
+        )
+    suffix = Path(file.filename or "").suffix.lower() if has_file else ""
+    if has_file and suffix not in ALLOWED_SUFFIXES:
+        raise HTTPException(400, f"Only {sorted(ALLOWED_SUFFIXES)} files are accepted.")
 
-    job = jobs.create_job()
+    # Every cheap check is now behind us, so the job below is only registered
+    # once the request is known to be worth a worker slot.
+    session_key, ip_key = _keys
+    job = jobs.try_create_job(
+        session_key,
+        ip_key,
+        session_max=ratelimit.JOBS_SESSION_INFLIGHT if ratelimit.enabled() else 0,
+        ip_max=ratelimit.JOBS_IP_INFLIGHT if ratelimit.enabled() else 0,
+    )
+    if job is None:
+        raise HTTPException(429, ratelimit.BUSY_MESSAGE, headers={"Retry-After": "10"})
     context_sentence = context_text.strip()
 
     if has_text:
@@ -162,18 +287,16 @@ async def create_job(
                 if not getattr(registry[n], "needs_previous_sentence", False)
             ]
     else:
-        suffix = Path(file.filename or "").suffix.lower()
-        if suffix not in ALLOWED_SUFFIXES:
-            raise HTTPException(400, f"Only {sorted(ALLOWED_SUFFIXES)} files are accepted.")
-        content = await file.read()
-        if len(content) > MAX_UPLOAD_BYTES:
-            raise HTTPException(413, "File exceeds the 50 MB upload limit.")
-        if not content.strip():
-            raise HTTPException(400, "Uploaded file is empty.")
         scheme = root_pos
         grammar_filter = True
         input_path = jobs.job_dir(job.job_id) / f"input{suffix}"
-        input_path.write_bytes(content)
+        within_cap, has_content = await _stream_upload(file, input_path)
+        if not within_cap:
+            jobs.discard(job)
+            raise HTTPException(413, _too_large_message())
+        if not has_content:
+            jobs.discard(job)
+            raise HTTPException(400, "Uploaded file is empty.")
 
     options = {
         "allowed_root_pos": ROOT_POS_PRESETS[scheme],

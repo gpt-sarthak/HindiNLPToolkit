@@ -226,5 +226,11 @@ out = apply_scorers(pairs_df, ["<your-name>"], context=context)
 - **Adding a scorer? Also add a tile** for it to the user-facing guide at
   `webapp/static/how-it-works.html` (served at `/how-it-works`) — that page is
   deliberately hand-written, not generated from `/api/plugins`.
+- **Adding an expensive endpoint?** Guard it with
+  `Depends(ratelimit.guard(...))` from `webapp/ratelimit.py` rather than an ad
+  hoc check, and give it its own bucket name so it does not share a budget with
+  an unrelated route. Never guard a cheap read — the SPA polls
+  `GET /api/jobs/{id}` every 1.5 s for the whole life of a job, and limiting it
+  breaks the page on the first run.
 
 Full API reference: [`DOCS.md`](DOCS.md).

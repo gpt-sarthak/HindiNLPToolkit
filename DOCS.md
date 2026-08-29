@@ -621,6 +621,30 @@ served at `/how-it-works` — intentionally not linked from the UI, and static
   the recommended word order and the full candidate ranking).
 - Jobs run on a 2-worker queue; results expire after one hour. A queued or
   running job can be cancelled (see *Cancelling a run* above).
+- **Request limits** (`webapp/ratelimit.py`): the expensive endpoints are
+  metered per caller, on two tiers at once — a *session* key
+  (`sha256(ip + first-party cookie)`, so a lab behind one NAT address is not one
+  shared budget) and the *IP* alone, which a cookie reset cannot escape. A
+  request needs room in both. Per 60 s: `POST /api/jobs` 2 session / 10 IP,
+  `POST /taru/parse` 6 / 20, `POST /taru/train` 2 / 5. Independently, a caller
+  may hold **1 job in flight** (3 per IP) — the cap that actually protects the
+  2-worker pool, since a single run can occupy a worker for many minutes;
+  cancelling frees the slot at once. Over-limit requests get **429** with
+  `Retry-After` and a plain-English `detail` that the UI shows verbatim.
+  Cheap reads are deliberately **never** limited — above all
+  `GET /api/jobs/{job_id}`, which the page polls every 1.5 s for the whole life
+  of a job. Limits are module constants; `HNT_NO_RATELIMIT=1` switches the whole
+  thing off for local dev and test runs. `HNT_TRUSTED_PROXY=1` takes the client
+  address from the **last** `X-Forwarded-For` hop instead of the socket — set it
+  only when a proxy you control terminates traffic, since the header is
+  otherwise attacker-supplied.
+- **Upload limits**: `.txt` / `.conllu` only, **250 MB** max
+  (`HNT_MAX_UPLOAD_BYTES` overrides it without a rebuild), and typed sentences
+  are capped at 2,000 characters. The body is streamed to disk in 1 MB chunks
+  and aborted the moment the running total passes the cap, so an oversized or
+  mis-declared upload is never held in memory; a `Content-Length` that is
+  already too large is refused up front by a small ASGI middleware, before
+  anything reads the body.
 - **Startup pre-warm**: the server loads the heavy models (Stanza, then the
   LSTM, then the large trigram model) on a background thread at startup, so
   the first job is fast; a job submitted while warming is still correct — it

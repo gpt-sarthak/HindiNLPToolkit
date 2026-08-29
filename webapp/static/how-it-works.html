@@ -294,6 +294,11 @@
               <li>In Sentence mode the optional <strong>context sentence</strong> is
                   parsed separately. It is handed to context-aware scorers as "the
                   preceding sentence" but is itself never filtered or permuted.</li>
+              <li>Uploads are limited to <strong>250&nbsp;MB</strong>, and you may have
+                  <strong>one run in progress at a time</strong> — a single run can hold
+                  a worker for several minutes, so the limit keeps one upload from
+                  crowding out everyone else. Cancelling a run frees the slot
+                  immediately.</li>
             </ul>
             <div class="artifacts"><span class="lbl">writes</span>
               <span class="artifact">parsed.conllu</span>
