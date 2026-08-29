@@ -524,6 +524,9 @@ const ARTIFACT_LABEL = {
   "recommendation.json": "recommendation.json",
 };
 const STAGE_ORDER = ["parse", "filter", "variants"];
+// Mirrors MAX_UPLOAD_BYTES in webapp/app.py — keep the two in step. The server
+// is the enforcer; this only avoids uploading a file that is certain to fail.
+const MAX_UPLOAD_MB = 250;
 
 const fileInput = document.getElementById("file-input");
 const dropzone = document.getElementById("dropzone");
@@ -712,6 +715,12 @@ document.getElementById("job-form").addEventListener("submit", async e => {
   } else {
     const f = fileInput.files[0];
     if (!f) return;
+    // Refuse an oversized file here rather than uploading it just to be told
+    // 413. The server still enforces the cap — this only saves the transfer.
+    if (f.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      formError.textContent = `That file is ${(f.size / (1024 * 1024)).toFixed(0)} MB — the limit is ${MAX_UPLOAD_MB} MB.`;
+      return;
+    }
     fd.append("file", f);
     fd.append("root_pos", rootPos.value);
     fd.append("evaluate", document.getElementById("evaluate-input").checked ? "true" : "false");
