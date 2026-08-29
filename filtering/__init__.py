@@ -11,11 +11,13 @@ filter_ghost_ids(sentences)
 filter_non_projective(sentences)
 filter_bad_root(sentences, allowed_pos)
 filter_punct_constituents(sentences_or_items, allowed_pos)
-filter_min_phrases(sentences_or_items, min_phrases, allowed_pos)
+filter_min_phrases(sentences_or_items, min_phrases, allowed_pos,
+                   subject_deprels, object_deprels, require_core_args)
 
 Combined pipeline
 -----------------
-filter_sentences(sentences, allowed_root_pos, min_phrases, output_dir)
+filter_sentences(sentences, allowed_root_pos, min_phrases, output_dir,
+                 subject_deprels, object_deprels, require_core_args)
 
 Summary
 -------

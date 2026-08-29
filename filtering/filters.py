@@ -12,11 +12,13 @@ filter_ghost_ids(sentences)
 filter_non_projective(sentences)
 filter_bad_root(sentences, allowed_pos)
 filter_punct_constituents(sentences_or_items, allowed_pos)
-filter_min_phrases(sentences_or_items, min_phrases, allowed_pos)
+filter_min_phrases(sentences_or_items, min_phrases, allowed_pos,
+                   subject_deprels, object_deprels, require_core_args)
 
 Combined pipeline
 -----------------
-filter_sentences(sentences, allowed_root_pos, min_phrases, output_dir)
+filter_sentences(sentences, allowed_root_pos, min_phrases, output_dir,
+                 subject_deprels, object_deprels, require_core_args)
     Runs all seven filters in order.  Returns (passed_list, rejected_df, passed_df).
 
 Summary
@@ -37,6 +39,15 @@ from conllu import TokenList
 
 # Default POS tags accepted on the sentence root for preverbal analysis.
 _DEFAULT_ALLOWED_POS: Tuple[str, ...] = ("VERB", "AUX", "VM", "VAUX")
+
+# Core-argument relations, unioned across both annotation schemes (UD first,
+# Paninian second).  A union is safe because the two schemes share no deprel
+# label and are never mixed in one call, so no scheme flag is needed here —
+# the same reasoning behind _DEFAULT_ALLOWED_POS above.
+# Deliberately excluded: `k1s` (predicative complement of a copula, not a
+# subject) and `pof` (the nominal half of a conjunct verb, not an object).
+_DEFAULT_SUBJECT_DEPRELS: Tuple[str, ...] = ("nsubj", "nsubj:pass", "k1")
+_DEFAULT_OBJECT_DEPRELS: Tuple[str, ...] = ("obj", "iobj", "k2", "k4")
 
 _REJECTED_COLS = ["Sent_ID", "Sentence", "Reason"]
 
@@ -500,12 +511,30 @@ def filter_min_phrases(
     sentences_or_items: Union[List[TokenList], List[Dict]],
     min_phrases: int = 2,
     allowed_pos: Optional[List[str]] = None,
+    subject_deprels: Optional[List[str]] = None,
+    object_deprels: Optional[List[str]] = None,
+    require_core_args: bool = True,
 ) -> Tuple[List[Dict], pd.DataFrame]:
     """
-    Remove sentences that have fewer than *min_phrases* preverbal constituents.
+    Remove sentences that lack a usable preverbal domain: fewer than
+    *min_phrases* preverbal constituents, or (by default) missing a preverbal
+    subject or object.
 
-    Variant generation requires at least two preverbal constituents so that
-    at least one non-trivial permutation exists.
+    Two conditions, because the preverbal block has to support the actual
+    research question:
+
+    1. **Count** — variant generation requires at least two preverbal
+       constituents so that at least one non-trivial permutation exists.
+    2. **Core arguments** — the constituents must include both a subject and an
+       object.  This is criterion (a) of Ranjan & van Schijndel (2024),
+       *"the trees contain both well-defined subjects and objects"*, and it is
+       what makes the SOV/OSV canonicity contrast meaningful: a sentence of a
+       subject plus three obliques satisfies the count but has no object to
+       move, so permuting it answers no question about word order.
+
+    Both are checked here rather than in a separate filter because the count was
+    only ever a proxy for this.  Set ``require_core_args=False`` to get the old
+    count-only behaviour.
 
     This function accepts two input types so it can be used independently or
     chained after ``filter_bad_root``:
@@ -524,12 +553,25 @@ def filter_min_phrases(
                          (default 2, must be ≥ 1).
     allowed_pos        : only used when input is List[TokenList].  POS tags
                          accepted on the root (default: VERB/AUX/VM/VAUX).
+    subject_deprels    : relations counted as a subject.  Defaults to
+                         ``("nsubj", "nsubj:pass", "k1")`` — both schemes at
+                         once, which is safe because they share no label.
+    object_deprels     : relations counted as an object.  Defaults to
+                         ``("obj", "iobj", "k2", "k4")``; indirect objects
+                         count.  Pass ``["obj", "k2"]`` for direct objects only.
+    require_core_args  : when True (default) also require a preverbal subject
+                         and object.  False restores the old count-only
+                         behaviour.
 
     Returns
     -------
     passed   : List[Dict]  — each dict has keys ``sentence``, ``root_id``,
                ``constituents``.  Ready for ``generate_variants()``.
     rejected : DataFrame with columns Sent_ID | Sentence | Reason.
+               Reason is ``"Fewer than N preverbal constituent(s)"`` for a count
+               failure, or one of ``"Missing preverbal subject"`` /
+               ``"Missing preverbal object"`` /
+               ``"Missing preverbal subject and object"``.
 
     Raises
     ------
@@ -550,6 +592,8 @@ def filter_min_phrases(
         raise ValueError(f"min_phrases must be >= 1, got {min_phrases}.")
 
     pos_tuple = tuple(allowed_pos) if allowed_pos else _DEFAULT_ALLOWED_POS
+    subj_set = set(subject_deprels) if subject_deprels else set(_DEFAULT_SUBJECT_DEPRELS)
+    obj_set = set(object_deprels) if object_deprels else set(_DEFAULT_OBJECT_DEPRELS)
     # Detect input type from the first element
     pre_computed = isinstance(sentences_or_items[0], dict)
 
@@ -571,10 +615,29 @@ def filter_min_phrases(
 
         if error:
             rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": error})
-        elif len(consts) < min_phrases:
+            continue
+        if len(consts) < min_phrases:
             rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": reason_template})
-        else:
-            passed.append({"sentence": sent, "root_id": root_id, "constituents": consts})
+            continue
+
+        if require_core_args:
+            # Every constituent is the subtree of one direct root dependent, so
+            # its deprel *is* that dependent's relation to the root.
+            deprels = {_get_constituent_deprel(c, root_id) for c in consts}
+            missing = []
+            if not (deprels & subj_set):
+                missing.append("subject")
+            if not (deprels & obj_set):
+                missing.append("object")
+            if missing:
+                rejected.append({
+                    "Sent_ID": sent_id,
+                    "Sentence": text,
+                    "Reason": f"Missing preverbal {' and '.join(missing)}",
+                })
+                continue
+
+        passed.append({"sentence": sent, "root_id": root_id, "constituents": consts})
 
     return passed, _make_rejected_df(rejected)
 
@@ -588,6 +651,9 @@ def filter_sentences(
     allowed_root_pos: Optional[List[str]] = None,
     min_phrases: int = 2,
     output_dir: Optional[str] = None,
+    subject_deprels: Optional[List[str]] = None,
+    object_deprels: Optional[List[str]] = None,
+    require_core_args: bool = True,
 ) -> Tuple[List[Dict], pd.DataFrame, pd.DataFrame]:
     """
     Run all seven filters in sequence and return the final passed set plus
@@ -604,7 +670,8 @@ def filter_sentences(
     4. ``filter_non_projective``      — removes non-projective dependency trees
     5. ``filter_bad_root``            — removes non-verbal roots; extracts constituents
     6. ``filter_punct_constituents``  — removes sentences with a bare punct constituent
-    7. ``filter_min_phrases``         — removes sentences below the constituent-count threshold
+    7. ``filter_min_phrases``         — removes sentences below the constituent-count
+                                        threshold, or missing a preverbal subject/object
 
     Parameters
     ----------
@@ -615,6 +682,12 @@ def filter_sentences(
                        (default 2).
     output_dir       : if given, writes ``passed_sentences.csv`` and
                        ``rejected_sentences.csv`` to this directory.
+    subject_deprels  : filter 7 — relations counted as a subject
+                       (default ``("nsubj", "nsubj:pass", "k1")``).
+    object_deprels   : filter 7 — relations counted as an object
+                       (default ``("obj", "iobj", "k2", "k4")``).
+    require_core_args: filter 7 — when True (default) also require a preverbal
+                       subject and object.  False gives count-only filtering.
 
     Returns
     -------
@@ -655,7 +728,13 @@ def filter_sentences(
     p5, r5 = filter_bad_root(p4, allowed_pos=allowed_root_pos) if p4 else ([], _empty)
     # p5 onward is List[Dict] with pre-computed constituents
     p6, r6 = filter_punct_constituents(p5) if p5 else ([], _empty)
-    passed_list, r7 = filter_min_phrases(p6, min_phrases=min_phrases) if p6 else ([], _empty)
+    passed_list, r7 = filter_min_phrases(
+        p6,
+        min_phrases=min_phrases,
+        subject_deprels=subject_deprels,
+        object_deprels=object_deprels,
+        require_core_args=require_core_args,
+    ) if p6 else ([], _empty)
 
     # ── Merge all rejection logs into one DataFrame ───────────────────────────
     rejected_df = pd.concat([r1, r2, r3, r4, r5, r6, r7], ignore_index=True)
@@ -757,9 +836,16 @@ def summarize(
         if key == "Non-verbal root":
             count = sum(v for k, v in rejection_counts.items() if k.startswith("Non-verbal root"))
         elif key == "Fewer than":
-            # Matches dynamic labels from filter_min_phrases ("Fewer than N preverbal constituent(s)")
-            count = sum(v for k, v in rejection_counts.items() if k.startswith("Fewer than"))
-            key = "Too few preverbal constituents"
+            # filter_min_phrases rejects for two reasons and both must land in
+            # this one entry, or the UI's filter card stops summing to
+            # total_rejected: the dynamic count label ("Fewer than N preverbal
+            # constituent(s)") and the core-argument labels ("Missing preverbal
+            # subject" / "... object" / "... subject and object").
+            count = sum(
+                v for k, v in rejection_counts.items()
+                if k.startswith("Fewer than") or k.startswith("Missing preverbal")
+            )
+            key = "Too few phrases or missing subject/object"
         else:
             count = rejection_counts.get(key, 0)
         filter_order.append({"filter": key, "rejected": count})
