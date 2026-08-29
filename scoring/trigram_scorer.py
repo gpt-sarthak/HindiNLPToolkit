@@ -32,6 +32,8 @@ import pickle
 from pathlib import Path
 from threading import Lock
 
+from helpers import heartbeat
+
 from .base import Scorer
 
 _MODEL_PATH = Path(__file__).resolve().parent / "models" / "trigram.pkl"
@@ -110,6 +112,7 @@ class TrigramScorer(Scorer):
         cache: dict = {}
 
         def surprisal(text) -> float:
+            heartbeat()          # cancellation checkpoint (no-op outside a job)
             key = str(text)
             if key not in cache:
                 cache[key] = _sentence_surprisal(key, model)

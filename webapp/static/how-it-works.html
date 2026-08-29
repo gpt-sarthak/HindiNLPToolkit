@@ -437,7 +437,7 @@
           </details>
         </div>
         <div class="fork-branch">
-          <span class="mode-badge sentence">Sentence mode · always</span>
+          <span class="mode-badge sentence">Sentence mode · on by default</span>
           <details class="flow-node fork-node" id="recommendation">
             <summary>
               <span class="step-num">5b</span>
@@ -455,6 +455,9 @@
                  <code>Recommended_Score</code>) into <code>variants.csv</code> in
                  <strong>both</strong> modes — so File mode gets a recommendation for
                  every sentence in the corpus, right beside the scores.</p>
+              <p>Sentence mode's <em>Recommend a word order</em> checkbox turns this
+                 step off: unticked, neither the card, the JSON, nor the
+                 <code>Recommended_*</code> columns are produced.</p>
               <div class="artifacts"><span class="lbl">writes</span>
                 <span class="artifact">recommendation.json</span>
                 <span class="artifact">variants.csv columns</span>
@@ -631,9 +634,10 @@
     <!-- ── 06 · The recommendation score ── -->
     <section class="card" id="rec-card" style="animation-delay:0.3s">
       <h2><span class="num">06</span> The recommendation score <span class="step-sub">(Sentence mode)</span></h2>
-      <p>Sentence mode always ends with a "Recommended word order" card: your
-         original sentence and every generated variant, ranked. The combined score
-         behind that ranking is built in five steps:</p>
+      <p>Unless you untick <em>Recommend a word order</em>, Sentence mode ends with
+         a "Recommended word order" card: your original sentence and every generated
+         variant, ranked. The combined score behind that ranking is built in five
+         steps:</p>
       <ol style="padding-left:1.2rem; font-size:0.88rem; line-height:1.6; margin-top:0.6rem;">
         <li>Every candidate order gets each ticked scorer's <em>raw</em> score —
             read straight from the scoring step, nothing recomputed.</li>

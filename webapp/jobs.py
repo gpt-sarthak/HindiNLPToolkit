@@ -8,6 +8,12 @@ Jobs are kept in a dict and their artifacts on disk under
 ThreadPoolExecutor so uploads return immediately and at most MAX_WORKERS
 pipelines run concurrently; further jobs wait in the executor queue.
 Finished jobs older than JOB_TTL_SECONDS are swept on each new submission.
+
+A running job can be cancelled (``Job.cancel``).  Threads cannot be killed, so
+cancellation is cooperative: the pipeline and the scorers call
+``helpers.heartbeat()`` at frequent checkpoints and unwind on the next one,
+while external child processes registered with the token are terminated
+outright.  Artifacts already written stay on disk and downloadable.
 """
 
 from __future__ import annotations
@@ -21,6 +27,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from helpers import CancelToken, JobCancelled, bind, unbind
+
 OUTPUT_ROOT = Path(__file__).resolve().parent / "outputs"
 JOB_TTL_SECONDS = 3600
 MAX_WORKERS = 2
@@ -33,12 +41,24 @@ _lock = threading.Lock()
 @dataclass
 class Job:
     job_id: str
-    status: str = "queued"          # queued | running | done | failed
+    status: str = "queued"          # queued | running | done | failed | cancelled
     stage: str = ""                 # parse | filter | variants | complete
     error: str = ""
     artifacts: List[str] = field(default_factory=list)
     summary: Optional[dict] = None
     created_at: float = field(default_factory=time.time)
+    token: CancelToken = field(default_factory=CancelToken)
+
+    def cancel(self) -> None:
+        """Stop this job for good.
+
+        Marks it cancelled straight away — so the next poll reflects it and the
+        client is free to submit again — then fires the killer, which kills any
+        registered child process.  The worker thread unwinds on its next
+        heartbeat, in the background.  There is no resuming a cancelled job.
+        """
+        self.status = "cancelled"
+        self.token.cancel()
 
     def to_dict(self) -> dict:
         return {
@@ -48,6 +68,9 @@ class Job:
             "error": self.error,
             "artifacts": list(self.artifacts),
             "summary": self.summary,
+            # Wall-clock time of the worker's last checkpoint — a liveness
+            # signal for the UI while a long stage is running.
+            "last_beat": self.token.last_beat,
         }
 
 
@@ -73,13 +96,22 @@ def submit(job: Job, fn, *args) -> None:
     """Run fn(*args) on the worker pool, tracking status on the job."""
 
     def _run():
+        # Cancelled while still queued behind the workers — never start it.
+        if job.token.cancelled:
+            job.status = "cancelled"
+            return
         job.status = "running"
+        bind(job.token)          # heartbeats anywhere below now honour this job
         try:
             fn(*args)
             job.status = "done"
+        except JobCancelled:     # cooperative stop — not a failure
+            job.status = "cancelled"
         except Exception as exc:  # surfaced to the user via the status API
             job.status = "failed"
             job.error = f"{type(exc).__name__}: {exc}"
+        finally:
+            unbind()
 
     _executor.submit(_run)
 
@@ -91,7 +123,7 @@ def _cleanup_expired() -> None:
             jid
             for jid, job in _jobs.items()
             if now - job.created_at > JOB_TTL_SECONDS
-            and job.status in ("done", "failed")
+            and job.status in ("done", "failed", "cancelled")
         ]
         for jid in expired:
             _jobs.pop(jid)

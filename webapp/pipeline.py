@@ -5,12 +5,18 @@ Thin adapter between the web layer and the logic packages.  Runs the full
 parse → filter → variants(+scorers) pipeline for one job, writing each
 artifact to disk the moment its stage completes so downloads become
 available progressively.
+
+``heartbeat()`` is called at every checkpoint along the way: a cancelled job
+raises ``JobCancelled`` there and unwinds, leaving whatever was already written
+on disk (see webapp/jobs.py and helpers/cancellation.py).
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+
+from helpers import JobCancelled, heartbeat
 
 from webapp import jobs
 
@@ -72,9 +78,12 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
     evaluate         : bool — when True, run the pairwise ranking-accuracy
                        evaluation over the scorers' Delta_* columns and write
                        evaluation.json (needs >= MIN_EVAL_PAIRS pairs)
-    recommend        : bool (Sentence mode) — when True, rank the reference and
-                       its variants with the ticked scorers' features and write
-                       recommendation.json (the most natural word order)
+    recommend        : bool — when True (the default), rank each sentence's
+                       reference and variants with the ticked scorers' features
+                       and append the Recommended_* columns to variants.csv
+    recommend_json   : bool (Sentence mode) — when True, also write
+                       recommendation.json (the most natural word order with
+                       its full candidate list)
     context_text     : optional preceding sentence (Sentence mode) parsed and
                        prepended to the scoring corpus so context-aware scorers
                        can see a predecessor; never filtered or permuted
@@ -88,6 +97,7 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
 
     # ── Stage 1: parse ────────────────────────────────────────────────────
     job.stage = "parse"
+    heartbeat()
     sentences = load_input(str(input_path))          # target sentence(s)
     if input_path.suffix.lower() == ".txt":
         # .txt input went through Stanza — offer the resulting CoNLL-U (the
@@ -109,7 +119,8 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
         corpus_sentences = list(ctx_sentences) + list(sentences)
 
     # ── Stage 2: filter ───────────────────────────────────────────────────
-    job.stage = "filter"
+    heartbeat()          # before the stage marker, so a cancelled job reports
+    job.stage = "filter"  # the stage it actually died in
     passed, rejected_df, _passed_df = filter_sentences(
         sentences,
         allowed_root_pos=options.get("allowed_root_pos"),
@@ -127,6 +138,7 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
     job.summary = summary
 
     # ── Stage 3: variants + scorers ───────────────────────────────────────
+    heartbeat()
     job.stage = "variants"
     valid_pairs = None  # None → generate_variants builds it from the corpus
     if not options.get("grammar_filter", True):
@@ -148,6 +160,7 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
         valid_deprel_pairs=valid_pairs,
         max_variants=options.get("max_variants", 99),
     )
+    heartbeat()
     scorer_names = options.get("scorers") or []
     if scorer_names and not pairs_df.empty:
         # Read-only corpus context for scheme-aware scorers (e.g. Information
@@ -159,15 +172,27 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
             "passed": passed,
             "scheme": options.get("scheme"),
         }
-        pairs_df = apply_scorers(pairs_df, scorer_names, context=context)
-        # Recommended word order per source sentence, broadcast across its rows
-        # (both modes — one column set, constant within each Sent_ID).  None when
-        # no ticked scorer contributes a rankable feature.
-        rec_cols = recommend_column(pairs_df, scorer_names)
-        if rec_cols is not None:
-            pairs_df = pairs_df.join(rec_cols)
+        try:
+            pairs_df = apply_scorers(pairs_df, scorer_names, context=context)
+            heartbeat()
+            # Recommended word order per source sentence, broadcast across its
+            # rows (one column set, constant within each Sent_ID).  None when no
+            # ticked scorer contributes a rankable feature.
+            if options.get("recommend", True):
+                rec_cols = recommend_column(pairs_df, scorer_names)
+                if rec_cols is not None:
+                    pairs_df = pairs_df.join(rec_cols)
+        except JobCancelled:
+            # Cancelled mid-scoring: flush what we have rather than nothing,
+            # then unwind.  `pairs_df` is only rebound on a *successful* call,
+            # so this writes either the plain surface pairs or a fully scored
+            # table — never a half-filled one.
+            pairs_df.to_csv(out / "variants.csv", index=False, encoding="utf-8")
+            job.artifacts.append("variants.csv")
+            raise
     pairs_df.to_csv(out / "variants.csv", index=False, encoding="utf-8")
     job.artifacts.append("variants.csv")
+    heartbeat()
 
     # Optional ranking-accuracy evaluation over the scorers' Delta_* columns
     # (File mode opt-in; still part of the "variants" stage for the UI).
@@ -181,7 +206,7 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
 
     # Sentence-mode recommendation: pick the most natural word order among the
     # reference and its variants (still part of the "variants" stage).
-    if options.get("recommend"):
+    if options.get("recommend_json"):
         payload = _recommendation_payload(pairs_df, scorer_names)
         (out / "recommendation.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, default=float),

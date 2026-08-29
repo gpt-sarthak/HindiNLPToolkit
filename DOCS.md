@@ -588,15 +588,24 @@ served at `/how-it-works` — intentionally not linked from the UI, and static
     render inline, each with an expand control. The first typed run downloads the
     Stanza Hindi model (slow once). Sentence mode also picks the **most natural
     word order** among the typed sentence and its variants and shows it in a
-    *Recommended word order* card (see the Recommendation section below).
+    *Recommended word order* card (see the Recommendation section below) —
+    unless *Recommend a word order* is unticked.
   - *File* — one `.conllu` or `.txt` upload (`.txt` = one Hindi sentence per
     line, also parsed with Stanza). Uses the selected scheme and the grammar
     filter **on** (see below).
 - **Options**: max variants per sentence, annotation scheme preset (Paninian /
-  UD root POS, File mode only), which cognitive scorers to run, and — File mode
-  only — **Evaluate predictor accuracy** (pairwise ranking accuracy over the
-  ticked scorers' deltas; see the Evaluation section below). (Min preverbal
-  phrases is fixed internally at 2.)
+  UD root POS, File mode only), which cognitive scorers to run, and one
+  mode-specific checkbox each — File mode's **Evaluate predictor accuracy**
+  (pairwise ranking accuracy over the ticked scorers' deltas; see the Evaluation
+  section below) and Sentence mode's **Recommend a word order** (on by default;
+  unticking it skips the ranking entirely, so neither `recommendation.json` nor
+  the `Recommended_*` columns are produced). (Min preverbal phrases is fixed
+  internally at 2.)
+- **Cancelling a run**: while a job is running, *Cancel run* → *Yes, stop it*
+  stops it for good (`POST /api/jobs/{id}/cancel`) and hands the form straight
+  back, so the next job can be submitted immediately. Artifacts already written
+  stay downloadable — a job cancelled during scoring still leaves the surface
+  `variants.csv`. There is no resuming a cancelled job.
 - **Grammar filter**: on for File mode, off for Sentence mode. When on, only
   reorderings whose adjacent deprel bigrams occur in the corpus are kept (the
   library's standard behaviour); for small corpora (roughly < 100 sentences)
@@ -608,9 +617,10 @@ served at `/how-it-works` — intentionally not linked from the UI, and static
   (reference/variant pairs with `Sent_ID`/`Variant_ID` plus scorer columns and,
   when scorers run, the `Recommended_*` word-order columns),
   `evaluation.json` (only when *Evaluate predictor accuracy* was ticked), and
-  `recommendation.json` (Sentence mode — the recommended word order and the
-  full candidate ranking).
-- Jobs run on a 2-worker queue; results expire after one hour.
+  `recommendation.json` (Sentence mode, unless the recommendation was unticked —
+  the recommended word order and the full candidate ranking).
+- Jobs run on a 2-worker queue; results expire after one hour. A queued or
+  running job can be cancelled (see *Cancelling a run* above).
 - **Startup pre-warm**: the server loads the heavy models (Stanza, then the
   LSTM, then the large trigram model) on a background thread at startup, so
   the first job is fast; a job submitted while warming is still correct — it
@@ -753,6 +763,40 @@ and the head pointers that reference them (the variant is a re-ordering of the
 same words). Lower-level pieces are also exported: `recover_permutation`,
 `reindex_tokens`, `block_start_index`. Pass `perm=` to skip block-matching when
 the constituent order is already known.
+
+### Cancellation (`helpers/cancellation.py`)
+
+How the web app stops a running job. Python threads cannot be killed, so a run
+is stopped by agreement: long loops call `heartbeat()`, and once the job's token
+is cancelled the next heartbeat raises `JobCancelled`, unwinding the pipeline.
+Artifacts already written stay on disk.
+
+```python
+from helpers import heartbeat, register_process
+
+for sentence in sentences:      # in any scorer / long loop
+    heartbeat()                 # no-op outside the web app
+    ...
+
+with subprocess.Popen(...) as proc, register_process(proc):
+    out, err = proc.communicate(timeout=300)   # killed if the job is cancelled
+```
+
+- **The killer** — `CancelToken.cancel()`. Flips the token *and* terminates
+  every registered child process, which is the one thing a cooperative flag
+  cannot interrupt (the Berkeley JVM is one blocking call for a whole batch).
+- **The heartbeat** — `heartbeat()`. Records liveness (surfaced as `last_beat`
+  on the job status) and raises once cancelled. Cheap enough to call per row.
+- The token is bound to the worker **thread** (`bind`/`unbind`, used by
+  `webapp/jobs.py`), so scorers need no extra argument. Nothing binds a token
+  outside the web app, which is why both calls are no-ops for library, notebook
+  and test-suite callers.
+
+Where the heartbeats are: every stage boundary in `webapp/pipeline.py`, between
+scorers in `apply_scorers`, and per sentence in the slow scorers (`surprisal`,
+`trigram`, `lstm`, `adaptive_lstm`). Single opaque calls — the Stanza parse,
+`filter_sentences`, `generate_variants` — have no per-item hook, so a cancel
+issued during one takes effect when it returns.
 
 ### Built-in scorer: `dependency_length`
 
@@ -1080,14 +1124,22 @@ weight 1.0.
 
 ### In the web app
 
-Sentence mode always writes a `recommendation.json` artifact (`status`
-`"ok"` / `"no_scorers"` / `"no_pairs"`) and renders the *Recommended word
-order* card: the winning order with a badge ("your original order" vs
-"reordered variant") and the full candidate table — one column per feature
-(↓/↑ = direction), best first, winner highlighted. File mode does not write the
-JSON/card (use *Evaluate predictor accuracy* there instead), but both modes
-append the `Recommended_*` columns (via `recommend_column`) to `variants.csv`
-whenever scorers run.
+Sentence mode's *Recommend a word order* checkbox (on by default) writes a
+`recommendation.json` artifact (`status` `"ok"` / `"no_scorers"` / `"no_pairs"`)
+and renders the *Recommended word order* card: the winning order with a badge
+("your original order" vs "reordered variant") and the full candidate table —
+one column per feature (↓/↑ = direction), best first, winner highlighted.
+File mode does not write the JSON/card (use *Evaluate predictor accuracy* there
+instead) but does append the `Recommended_*` columns (via `recommend_column`) to
+`variants.csv` whenever scorers run.
+
+Two options carry this in `webapp/pipeline.py`, so the checkbox means one thing
+to the user and File mode keeps its columns:
+
+| Option | Gates | Sentence mode | File mode |
+|---|---|---|---|
+| `recommend` | `recommend_column` → the `Recommended_*` columns | the checkbox | always `True` |
+| `recommend_json` | `recommendation.json` + the card | the checkbox | always `False` |
 
 ## Evaluation (`evaluation/`)
 

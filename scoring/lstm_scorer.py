@@ -18,6 +18,8 @@ checkbox in the UI.
 
 from __future__ import annotations
 
+from helpers import heartbeat
+
 from ._lstm_common import get_lstm, sentence_lstm_surprisal
 from .base import Scorer
 
@@ -50,6 +52,7 @@ class LSTMScorer(Scorer):
         cache: dict = {}
 
         def surprisal(text) -> float:
+            heartbeat()          # cancellation checkpoint (no-op outside a job)
             key = str(text)
             if key not in cache:
                 cache[key] = sentence_lstm_surprisal(key, model, word2idx, device)

@@ -95,6 +95,7 @@ async def create_job(
     root_pos: str = Form("paninian"),
     scorers: str = Form(""),
     evaluate: bool = Form(False),
+    recommend: bool = Form(True),
 ) -> dict:
     """
     Start a pipeline job from either an uploaded corpus *or* typed sentences.
@@ -111,9 +112,12 @@ async def create_job(
     over the scorers' delta columns; it is forced off for typed text, where a
     single sentence cannot yield enough pairs.
 
-    Sentence mode instead gets a word-order recommendation: the reference and
-    its variants are ranked by the ticked scorers' features and the most
-    natural order is written to recommendation.json (see webapp/pipeline.py).
+    ``recommend`` (Sentence mode only, on by default) gets a word-order
+    recommendation instead: the reference and its variants are ranked by the
+    ticked scorers' features and the most natural order is written to
+    recommendation.json (see webapp/pipeline.py).  Unticking it also drops the
+    Recommended_* columns from variants.csv.  File mode has no such control and
+    keeps those columns.
 
     Returns the job id.
     """
@@ -179,8 +183,13 @@ async def create_job(
         "grammar_filter": grammar_filter,
         "scorers": scorer_names,
         "evaluate": evaluate,
-        # Sentence-mode headline result; File mode has `evaluate` instead.
-        "recommend": has_text,
+        # Ranking work behind the Recommended_* columns of variants.csv.  The
+        # opt-out is Sentence mode's; File mode has always carried the columns
+        # and keeps them.
+        "recommend": recommend if has_text else True,
+        # Sentence-mode headline result (recommendation.json + its card); File
+        # mode has `evaluate` instead.
+        "recommend_json": has_text and recommend,
         "context_text": context_sentence if has_text else "",
     }
     jobs.submit(job, run_job, job, input_path, options)
@@ -192,6 +201,26 @@ def job_status(job_id: str) -> dict:
     job = jobs.get_job(job_id)
     if job is None:
         raise HTTPException(404, "Job not found (it may have expired).")
+    return job.to_dict()
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict:
+    """Stop a queued or running job and return its final state.
+
+    Returns as soon as the killer has fired: the worker unwinds on its next
+    heartbeat, in the background, so the client is free to submit a new job
+    immediately.  Artifacts already written stay downloadable.  Idempotent —
+    cancelling a finished job is a no-op that reports the existing state.
+
+    Like the download routes, the 12-hex job id is the only credential; a
+    client can therefore only cancel a job whose id it was given.
+    """
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found (it may have expired).")
+    if job.status not in ("done", "failed", "cancelled"):
+        job.cancel()
     return job.to_dict()
 
 
