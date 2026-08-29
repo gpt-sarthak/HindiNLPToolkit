@@ -28,7 +28,7 @@ from .base import Scorer
 from .recommend import recommend_order, recommend_column
 # Re-exported for backward compatibility; the implementation now lives in the
 # top-level `helpers` package.
-from helpers import CorpusContext, build_corpus_context
+from helpers import CorpusContext, build_corpus_context, heartbeat
 
 _registry: Dict[str, Scorer] = {}
 _discovered = False
@@ -101,6 +101,7 @@ def apply_scorers(
     scorers = get_scorers()
     ran: List[Scorer] = []
     for name in names:
+        heartbeat()   # cancellation checkpoint between scorers (no-op if none)
         if name not in scorers:
             raise KeyError(
                 f"Unknown scorer '{name}'. Available: {sorted(scorers)}"

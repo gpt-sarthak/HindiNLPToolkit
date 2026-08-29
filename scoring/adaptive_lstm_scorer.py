@@ -33,6 +33,8 @@ import copy
 from collections import defaultdict
 from typing import Optional
 
+from helpers import heartbeat
+
 from ._lstm_common import adapt_one_step, get_lstm, sentence_lstm_surprisal
 from .base import Scorer
 
@@ -80,6 +82,8 @@ class AdaptiveLSTMScorer(Scorer):
         var_series = df["Variant_Sentence"]
 
         for sid, positions in groups.items():
+            heartbeat()      # cancellation checkpoint (no-op outside a job) —
+                             # one deepcopy + SGD step per sentence below
             ctx_text = ""
             if corpus is not None:
                 try:

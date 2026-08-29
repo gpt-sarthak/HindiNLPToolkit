@@ -180,6 +180,22 @@
   button.go:disabled { opacity: 0.45; cursor: not-allowed; }
   .form-error { color: var(--vermilion-deep); font-size: 0.8rem; margin-top: 0.6rem; min-height: 1.1em; }
 
+  /* ── Cancel a running job ───────────────────────────── */
+  .run-actions { margin-top: 0.55rem; }
+  button.cancel {
+    font-family: var(--mono); font-size: 0.72rem; font-weight: 600;
+    color: var(--ink-soft); background: var(--paper);
+    border: 1px solid var(--line); border-radius: 5px;
+    padding: 0.3rem 0.6rem; cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  button.cancel:hover { border-color: var(--ink); color: var(--ink); }
+  button.cancel.danger { color: var(--vermilion-deep); border-color: var(--vermilion-deep); }
+  button.cancel.danger:hover { background: var(--vermilion-deep); color: #fff; }
+  button.cancel:disabled { opacity: 0.45; cursor: not-allowed; }
+  .confirm-row { font-size: 0.76rem; color: var(--ink-soft); line-height: 1.45; margin-top: 0.5rem; }
+  .confirm-buttons { display: flex; gap: 0.4rem; margin-top: 0.45rem; }
+
   /* ── Stages ─────────────────────────────────────────── */
   .stage { border-left: 3px solid var(--line); padding: 0.15rem 0 0.9rem 1rem; margin-left: 0.45rem; position: relative; }
   .stage:last-child { padding-bottom: 0.1rem; }
@@ -193,6 +209,8 @@
   .stage.done { border-left-color: var(--green); }
   .stage.done::before { border-color: var(--green); background: var(--green); }
   .stage.failed::before { border-color: var(--vermilion-deep); background: var(--vermilion-deep); }
+  .stage.cancelled::before { border-color: var(--ink-soft); background: var(--ink-soft); }
+  .stage.cancelled .stage-state { color: var(--ink-soft); }
   .stage-name { font-family: var(--display); font-weight: 600; font-size: 0.98rem; }
   .stage-state { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-soft); margin-left: 0.45rem; }
   .stage.running .stage-state { color: var(--vermilion); }
@@ -377,9 +395,25 @@
               <span class="desc">10-fold cross-validation: how often each ticked scorer picks the human-written order over its variants. Needs at least 200 (reference, variant) pairs.</span>
             </span>
           </label>
+          <label class="scorer-row eval-opt hidden" id="recommend-field">
+            <input type="checkbox" id="recommend-input" checked>
+            <span>Recommend a word order
+              <span class="desc">Rank your sentence against its variants with the ticked scorers and pick the most natural order. Also adds the Recommended_* columns to variants.csv.</span>
+            </span>
+          </label>
         </fieldset>
 
         <button type="submit" class="go" id="submit-btn" disabled>Run pipeline</button>
+        <div class="run-actions hidden" id="cancel-wrap">
+          <button type="button" class="cancel" id="cancel-btn">Cancel run</button>
+          <div class="confirm-row hidden" id="cancel-confirm">
+            <span>Stop this run? Artifacts already produced are kept, but the run cannot be resumed.</span>
+            <span class="confirm-buttons">
+              <button type="button" class="cancel danger" id="cancel-yes">Yes, stop it</button>
+              <button type="button" class="cancel" id="cancel-no">Keep running</button>
+            </span>
+          </div>
+        </div>
         <div class="form-error" id="form-error"></div>
       </form>
     </section>
@@ -502,8 +536,12 @@ const rootPos = document.getElementById("root-pos");
 const schemeNote = document.getElementById("scheme-note");
 const contextInput = document.getElementById("context-input");
 const contextField = document.getElementById("context-field");
+const cancelWrap = document.getElementById("cancel-wrap");
+const cancelBtn = document.getElementById("cancel-btn");
+const cancelConfirm = document.getElementById("cancel-confirm");
 let inputMode = "sentence";  // "sentence" | "file"
 let pollTimer = null;
+let currentJobId = null;      // the job this page is attached to (cancel target)
 let treesRenderedFor = null;  // jobId whose trees are already drawn
 let evalRenderedFor = null;   // jobId whose ranking-accuracy card is drawn
 let recRenderedFor = null;    // jobId whose recommended-order card is drawn
@@ -580,6 +618,8 @@ function setMode(mode) {
   dropzone.classList.toggle("hidden", sentence);
   // Ranking-accuracy evaluation needs a corpus-sized pair set — File mode only.
   document.getElementById("evaluate-field").classList.toggle("hidden", sentence);
+  // The word-order recommendation is the Sentence-mode headline result.
+  document.getElementById("recommend-field").classList.toggle("hidden", !sentence);
   // Typed text is parsed by Stanza as UD — lock the scheme to UD.
   rootPos.disabled = sentence;
   schemeNote.classList.toggle("hidden", !sentence);
@@ -603,11 +643,13 @@ async function attachJob(jobId) {
   catch { sessionStorage.removeItem("hnt.jobId"); return; }
   if (!res.ok) { sessionStorage.removeItem("hnt.jobId"); return; }  // expired
   const job = await res.json();
+  currentJobId = jobId;
   document.getElementById("idle-note").classList.add("hidden");
   document.getElementById("stages").classList.remove("hidden");
   render(job, jobId);
   if (job.status === "failed") showError(job.error);
-  else if (job.status !== "done") startPolling(jobId);
+  // A cancelled job is over — repaint it, but never resume polling it.
+  else if (job.status !== "done" && job.status !== "cancelled") startPolling(jobId);
 }
 
 function restoreSession() {
@@ -666,6 +708,7 @@ document.getElementById("job-form").addEventListener("submit", async e => {
     fd.append("text", text);
     fd.append("context_text", contextInput.value.trim());
     fd.append("root_pos", "ud");
+    fd.append("recommend", document.getElementById("recommend-input").checked ? "true" : "false");
   } else {
     const f = fileInput.files[0];
     if (!f) return;
@@ -687,6 +730,7 @@ document.getElementById("job-form").addEventListener("submit", async e => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || res.statusText);
     sessionStorage.setItem("hnt.jobId", data.job_id);
+    currentJobId = data.job_id;
     startPolling(data.job_id);
   } catch (err) {
     formError.textContent = err.message;
@@ -709,6 +753,7 @@ function resetResults() {
   treesRenderedFor = null;
   evalRenderedFor = null;
   recRenderedFor = null;
+  hideCancel();
   for (const el of document.querySelectorAll(".stage")) {
     el.className = "stage";
     el.querySelector(".stage-state").textContent = "pending";
@@ -718,6 +763,7 @@ function resetResults() {
 
 function startPolling(jobId) {
   submitBtn.textContent = "Running…";
+  showCancel();
   const tick = async () => {
     let job;
     try {
@@ -726,14 +772,13 @@ function startPolling(jobId) {
       job = await res.json();
     } catch {
       clearInterval(pollTimer);
+      hideCancel();
       showError("Lost contact with the job. Reload and try again.");
       return;
     }
     render(job, jobId);
-    if (job.status === "done" || job.status === "failed") {
-      clearInterval(pollTimer);
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Run pipeline";
+    if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+      finishRun();
       if (job.status === "failed") showError(job.error);
     }
   };
@@ -741,22 +786,71 @@ function startPolling(jobId) {
   pollTimer = setInterval(tick, 1500);
 }
 
+// Stop polling and hand the form back to the user, whatever ended the run.
+function finishRun() {
+  clearInterval(pollTimer);
+  hideCancel();
+  submitBtn.disabled = false;
+  submitBtn.textContent = "Run pipeline";
+}
+
+// ── Cancel ──────────────────────────────────────────────────
+function showCancel() {
+  cancelWrap.classList.remove("hidden");
+  cancelBtn.classList.remove("hidden");
+  cancelConfirm.classList.add("hidden");
+  cancelBtn.disabled = false;
+}
+
+function hideCancel() {
+  cancelWrap.classList.add("hidden");
+  cancelConfirm.classList.add("hidden");
+}
+
+cancelBtn.addEventListener("click", () => {
+  cancelBtn.classList.add("hidden");
+  cancelConfirm.classList.remove("hidden");
+});
+
+document.getElementById("cancel-no").addEventListener("click", showCancel);
+
+document.getElementById("cancel-yes").addEventListener("click", async () => {
+  if (!currentJobId) { finishRun(); return; }
+  const jobId = currentJobId;
+  // Stop polling first: the job is already doomed server-side by the time the
+  // POST returns, and a tick in flight would repaint it as still running.
+  clearInterval(pollTimer);
+  cancelConfirm.classList.add("hidden");
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+    const job = await res.json();
+    if (!res.ok) throw new Error(job.detail || res.statusText);
+    render(job, jobId);
+  } catch (err) {
+    formError.textContent = `Could not cancel: ${err.message}`;
+  }
+  finishRun();
+});
+
 function render(job, jobId) {
   const currentIdx = STAGE_ORDER.indexOf(job.stage);
+  const cancelled = job.status === "cancelled";
   for (const el of document.querySelectorAll(".stage")) {
     const name = el.dataset.stage;
     const idx = STAGE_ORDER.indexOf(name);
     const state = el.querySelector(".stage-state");
-    el.classList.remove("running", "done", "failed");
+    el.classList.remove("running", "done", "failed", "cancelled");
     if (job.status === "queued") {
       state.textContent = "queued";
     } else if (job.stage === "complete" || job.status === "done" || idx < currentIdx) {
       el.classList.add("done"); state.textContent = "done";
-    } else if (idx === currentIdx) {
-      if (job.status === "failed") { el.classList.add("failed"); state.textContent = "failed"; }
+    // A job cancelled before it started has no stage — mark the first one.
+    } else if (idx === currentIdx || (cancelled && currentIdx < 0 && idx === 0)) {
+      if (cancelled) { el.classList.add("cancelled"); state.textContent = "cancelled"; }
+      else if (job.status === "failed") { el.classList.add("failed"); state.textContent = "failed"; }
       else { el.classList.add("running"); state.textContent = "running…"; }
     } else {
-      state.textContent = "pending";
+      state.textContent = cancelled ? "not run" : "pending";
     }
   }
 

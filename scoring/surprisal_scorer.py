@@ -18,6 +18,8 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
+from helpers import heartbeat
+
 from .base import Scorer
 
 # Make the Taru backend importable (same path the router uses).
@@ -56,11 +58,18 @@ class SurprisalScorer(Scorer):
 
     def score(self, pairs_df):
         df = pairs_df.copy()
+
+        def surprisal(text) -> float:
+            # One synproc shell-out per uncached surface, so the cancellation
+            # checkpoint goes here — this is the slowest scorer by far.
+            heartbeat()
+            return _sentence_surprisal(str(text))
+
         df["Surprisal_Reference"] = [
-            _sentence_surprisal(s) for s in df["Reference_Sentence"]
+            surprisal(s) for s in df["Reference_Sentence"]
         ]
         df["Surprisal_Variant"] = [
-            _sentence_surprisal(s) for s in df["Variant_Sentence"]
+            surprisal(s) for s in df["Variant_Sentence"]
         ]
         return df
 

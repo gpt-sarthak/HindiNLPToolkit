@@ -42,6 +42,8 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List
 
+from helpers import heartbeat, register_process
+
 from .base import Scorer
 
 _PKG_DIR = Path(__file__).resolve().parent
@@ -63,20 +65,30 @@ def _score_pcfg_live(sentences: List[str]) -> Dict[str, float]:
 
     inp = "\n".join(sentences) + "\n"
     try:
-        res = subprocess.run(
+        # Popen rather than subprocess.run so the JVM can be registered with the
+        # job's cancel token: this is one blocking call for the whole batch, so
+        # a cooperative heartbeat cannot interrupt it — the killer must be able
+        # to terminate the process itself.  Outside a job the registration is a
+        # no-op and this behaves exactly like the old subprocess.run.
+        with subprocess.Popen(
             ["java", "-Xmx4g", "-jar", str(_JAR),
              "-gr", str(_GRAMMAR), "-sentence_likelihood"],
-            input=inp,
-            capture_output=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
-            timeout=300,
-        )
+        ) as proc, register_process(proc):
+            try:
+                stdout, _stderr = proc.communicate(input=inp, timeout=300)
+            except Exception:
+                proc.kill()          # don't leave the JVM behind on a timeout
+                raise
     except Exception:
         return {}
 
     scores: Dict[str, float] = {}
-    lines = [ln for ln in res.stdout.splitlines() if ln.strip()]
+    lines = [ln for ln in stdout.splitlines() if ln.strip()]
     # The parser emits one likelihood line per input sentence, in order.
     for sent, line in zip(sentences, lines):
         try:
@@ -117,6 +129,9 @@ class PCFGDSPSScorer(Scorer):
             + [str(s) for s in df["Variant_Sentence"]]
         ))
         scores = _score_pcfg_live(surfaces)
+        # A cancel kills the JVM mid-batch, leaving partial output; unwind here
+        # rather than publishing a half-scored column.
+        heartbeat()
 
         df["PCFG_Reference"] = [scores.get(str(s), float("nan")) for s in df["Reference_Sentence"]]
         df["PCFG_Variant"] = [scores.get(str(s), float("nan")) for s in df["Variant_Sentence"]]

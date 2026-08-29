@@ -180,6 +180,19 @@ declare the `deltas()` — the pipeline handles the rest.
   instance), so app startup isn't blocked and you don't reload every call.
 - **Treat `context` as read-only** — it is shared across rows and across
   concurrent web jobs (2 workers). Don't mutate it or stash it on `self`.
+- **Call `helpers.heartbeat()` in long loops** (once per sentence is right) so a
+  user can cancel a run that is inside your scorer. It is a no-op outside the
+  web app, and raises `JobCancelled` when the job was cancelled — let that
+  propagate, don't catch it. If you shell out, wrap the handle in
+  `helpers.register_process(proc)` so the process is killed with the job:
+
+  ```python
+  from helpers import heartbeat, register_process
+
+  for sentence in sentences:
+      heartbeat()
+      ...
+  ```
 - **Keep your model weights and your own loader module out of this repo.** The
   scorer file goes in `scoring/`; large weight files should be gitignored.
 
