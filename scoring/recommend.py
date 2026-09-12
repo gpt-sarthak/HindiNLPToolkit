@@ -28,7 +28,7 @@ combination is fixed in advance:
    univariate logistic-regression coefficients fitted by
    ``python -m evaluation.fit_weights`` on a corpus (the Joachims pairwise
    trick: coefficients trained on (reference, variant) pairs rank single
-   candidates directly).  All seven built-in scorers ship a fitted weight; any
+   candidates directly).  All nine built-in scorers ship a fitted weight; any
    feature without a corpus-trained weight falls back to weight 1.0,
    direction-only.
 5. The top-scoring candidate is recommended; exact ties go to the reference.

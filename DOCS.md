@@ -1017,6 +1017,73 @@ runs and the score equals the plain `lstm` surprisal.
 | `Adaptive_Variant` | Adaptive LSTM surprisal (nats) of the variant order |
 | `Delta_Adaptive` | Advantage: the `ML_Label`-oriented difference |
 
+### Built-in scorer: `lstm_wiki50m`
+
+- **Trained on:** 50.8M tokens of Hindi Wikipedia, 30k vocabulary
+- **Built with:** 2-layer LSTM language model
+- **Notes:** surprisal in nats; batched, so a corpus pass is fast
+
+The same quantity as `lstm` — total LSTM surprisal of a word order — from a
+checkpoint retrained on the full Wikipedia corpus
+(`scoring/models/base_model_wiki50m.pt`, 65 MB). It ships **alongside** `lstm`,
+not as a replacement, so `Delta_LSTM`'s committed weight stays valid and
+`variants.csv` files produced before it existed remain comparable.
+
+It differs in two independent ways, each measured on the research corpus's
+92,299 pairs:
+
+- **Scoring** (+5.65 pts). Pads with `<SOS>`/`<EOS>` and applies the model's
+  training-time cleaning (`scoring/_lstm_wiki50m.py:normalize`), so every word
+  contributes — including the first, which `lstm` never predicts, and the
+  sentence end, which it never scores.
+- **Model** (+9.50 pts). 50.8M training tokens against `lstm`'s ~2M, with a
+  held-out split, early stopping and gradient clipping. **Held-out perplexity
+  79.65 versus 380.71** for the older checkpoint, on the identical split. Same
+  architecture, same `vocab.pkl`, so the two differ only in training.
+
+Ranking accuracy **77.45% → 92.60%**.
+
+Columns added to `variants.csv`:
+
+| Column | Description |
+|---|---|
+| `LSTMWiki50M_Reference` | Total LSTM surprisal (nats) of the reference order |
+| `LSTMWiki50M_Variant` | Total LSTM surprisal (nats) of the variant order |
+| `Delta_LSTMWiki50M` | Advantage: the `ML_Label`-oriented difference (central diff step) |
+
+⚠ The checkpoint stopped on a **25-minute training budget, not convergence** —
+validation loss was still falling — so 92.60% is a floor. Full audit:
+`D:\audit\lstm\FINDINGS.md`.
+
+### Built-in scorer: `adaptive_lstm_wiki50m`
+
+- **Trained on:** 50.8M tokens of Hindi Wikipedia, 30k vocabulary
+- **Built with:** 2-layer LSTM + one-step online adaptation
+- **Notes:** surprisal in nats; deterministic, unlike the older adaptive scorer
+
+The adaptive sibling of `lstm_wiki50m`, mirroring how `adaptive_lstm` relates to
+`lstm`: pristine base weights per sentence, one SGD step on the preceding
+sentence, then score the reference and its variants. Requires a context
+sentence (`needs_previous_sentence = True`).
+
+Columns added to `variants.csv`:
+
+| Column | Description |
+|---|---|
+| `AdaptiveWiki50M_Reference` | Total adapted surprisal (nats) of the reference order |
+| `AdaptiveWiki50M_Variant` | Total adapted surprisal (nats) of the variant order |
+| `Delta_AdaptiveWiki50M` | Advantage: the `ML_Label`-oriented difference (central diff step) |
+
+Two things worth knowing before choosing it over plain `lstm_wiki50m`:
+
+- **The adaptation is worth about +0.03 points** (92.63% vs 92.60%) while
+  deep-copying a 65 MB model per sentence. It exists for parity with the older
+  pair, not because the adaptation pays for itself.
+- **It is deterministic, and `adaptive_lstm` is not.** The older scorer runs its
+  gradient step with dropout live, so two runs of the same job disagree on
+  *every row* — measured across all 92,299 pairs, by up to 2.11 nats. This one
+  zeroes the dropout probability for the step, which costs nothing measurable.
+
 ### Built-in scorer: `berkeley_pcfg`
 
 - **Trained on:** HUTB — 13,282 DS-PS constituency trees
@@ -1048,10 +1115,11 @@ missing, Java is unavailable, or a sentence is unparseable, that score is `NaN`.
 | `PCFG_Variant` | Whole-sentence surprisal (nats) of the variant order |
 | `Delta_PCFG` | Advantage: the `ML_Label`-oriented difference |
 
-> **Model artifacts.** `trigram`, `lstm`, and `adaptive_lstm` load large files
-> from `scoring/models/` (`trigram_katz/` 148 MB across ten memory-mapped
-> files, `base_model.pt` 65 MB, `vocab.pkl`); `berkeley_pcfg` needs
-> `hdtb_dsps_grammar` (1.7 MB). These are
+> **Model artifacts.** `trigram`, `lstm`, `adaptive_lstm`, `lstm_wiki50m` and
+> `adaptive_lstm_wiki50m` load large files from `scoring/models/`
+> (`trigram_katz/` 148 MB across ten memory-mapped files, `base_model.pt`
+> 65 MB, `base_model_wiki50m.pt` 65 MB, the shared `vocab.pkl`);
+> `berkeley_pcfg` needs `hdtb_dsps_grammar` (1.7 MB). These are
 > kept out of git (too large for GitHub) and baked into the Docker image — place
 > them in `scoring/models/` for local runs. All loading is deferred to first use,
 > so plugin discovery and the rest of the pipeline are unaffected when a scorer
@@ -1088,7 +1156,7 @@ How it ranks (per `Sent_ID`):
    with no spread, or fewer than 2 finite values, contributes nothing.
 4. A candidate's combined score is the **weighted mean** of its oriented
    z-scores. Weights are corpus-trained standardized logistic-regression
-   coefficients (see below); all seven built-ins ship a fitted weight, and any
+   coefficients (see below); all nine built-ins ship a fitted weight, and any
    feature without one falls back to voting with 1.0.
 5. The top score wins; exact ties go to the reference. Candidates with no
    usable feature value (e.g. a missing model) score `null`.
@@ -1152,8 +1220,9 @@ python -m evaluation.fit_weights                     # DL + IS on UD HDTB (defau
 python -m evaluation.fit_weights --scorers dependency_length,information_status,lstm
 ```
 
-The shipped file carries fitted weights for **all seven** built-in scorers
+The shipped file carries fitted weights for **all nine** built-in scorers
 (magnitude = each feature's standalone accuracy at ranking the attested order):
+`Delta_AdaptiveWiki50M` 6.067 (92.6%), `Delta_LSTMWiki50M` 6.059 (92.6%),
 `Delta_DL` 0.638 (61.7%), `Delta_Trigram` 4.950 (89.5%), `Delta_LSTM` 1.820
 (77.5%), `Delta_Adaptive` 1.822 (77.4%), `Delta_PCFG` 0.896 (63.4%),
 `Delta_Surprisal` 0.872 (59.4%), `Delta_IS` 0.306 (53.1%). Provenance is mixed:
