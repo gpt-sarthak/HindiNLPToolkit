@@ -7,7 +7,7 @@ job after a fresh start is fast (cold container: ~223 s for the first job vs
 
 Runs on a daemon thread started from the FastAPI lifespan hook, so the server
 binds and serves immediately while models load behind it.  Targets are warmed
-cheap-first (Stanza → LSTM → trigram) and each one just calls the model's own
+cheap-first (Stanza → LSTM → trigram → LSTM-Wiki50M) and each one just calls its own
 lazy, thread-safe singleton loader — a job that races the warm-up blocks on
 the same lock instead of loading twice.
 
@@ -47,6 +47,12 @@ def _warm_trigram() -> None:
     get_lm()
 
 
+def _warm_lstm_wiki50m() -> None:
+    from scoring._lstm_wiki50m import get_lstm_wiki50m
+
+    get_lstm_wiki50m()
+
+
 # Cheap first: Stanza serves Sentence-mode parses immediately, then the LSTM
 # checkpoint.  The trigram model is memory-mapped and effectively free, but it
 # is warmed anyway so a first job never pays even that.
@@ -54,6 +60,7 @@ _TARGETS = [
     ("stanza", _warm_stanza),
     ("lstm", _warm_lstm),
     ("trigram", _warm_trigram),
+    ("lstm_wiki50m", _warm_lstm_wiki50m),
 ]
 
 

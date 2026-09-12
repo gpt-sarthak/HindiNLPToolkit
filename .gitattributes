@@ -6,6 +6,7 @@
 # Scorer model artifacts (gitignored on GitHub; force-added to the HF Space via
 # LFS so COPY . /app bakes them into the image). See README / deploy plan.
 scoring/models/base_model.pt filter=lfs diff=lfs merge=lfs -text
+scoring/models/base_model_wiki50m.pt filter=lfs diff=lfs merge=lfs -text
 scoring/models/vocab.pkl filter=lfs diff=lfs merge=lfs -text
 scoring/models/hdtb_dsps_grammar filter=lfs diff=lfs merge=lfs -text
 

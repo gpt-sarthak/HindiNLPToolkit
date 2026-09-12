@@ -473,9 +473,9 @@
       </div><!-- /.flow-fork -->
     </section>
 
-    <!-- ── 03 · The seven scorers ── -->
+    <!-- ── 03 · The nine scorers ── -->
     <section class="card" style="animation-delay:0.15s">
-      <h2><span class="num">03</span> The seven scorers</h2>
+      <h2><span class="num">03</span> The nine scorers</h2>
       <p>A scorer is a plugin that assigns each word order a number. Some are
          deterministic measurements of the parse tree; others are trained language
          models. The direction badge on each tile tells you how to read the raw
@@ -531,6 +531,31 @@
              pairs, the single strongest one.</p>
           <p class="meta">Katz backoff over Good-Turing discounted counts,
              trained on 1M Hindi Wikipedia sentences. Reported in bits.</p>
+        </div>
+
+        <div class="score-tile">
+          <h3>LSTM (Wikipedia 50M) <span class="delta-chip">Delta_LSTMWiki50M</span></h3>
+          <div class="badges"><span class="pill dir">↓ lower = more natural</span></div>
+          <p>The same idea as LSTM below, but retrained on 25&times; more text and
+             scored correctly. The older model reads about 2 million words; this
+             one read 50.8 million, and unlike the older scorer it counts the
+             first word and the sentence end instead of skipping them. On our
+             pairs it picks the human word order far more often.</p>
+          <p class="meta">2-layer LSTM trained on 50.8M tokens of Hindi
+             Wikipedia; held-out perplexity 79.65 against the older model's
+             380.71. Reported in nats.</p>
+        </div>
+
+        <div class="score-tile">
+          <h3>Adaptive LSTM (Wikipedia 50M) <span class="delta-chip">Delta_AdaptiveWiki50M</span></h3>
+          <div class="badges"><span class="pill dir">↓ lower = more natural</span><span class="pill ctx">needs context</span></div>
+          <p>The retrained model above, nudged towards the preceding sentence by
+             one training step before scoring. In our measurements the nudge is
+             worth almost nothing on top of the retrained model &mdash; it is here
+             so the two generations can be compared like for like.</p>
+          <p class="meta">Same checkpoint plus one-step online adaptation.
+             Deterministic: repeat runs give identical numbers, which the older
+             adaptive scorer does not.</p>
         </div>
 
         <div class="score-tile">
@@ -648,7 +673,7 @@
       <ol style="padding-left:1.2rem; font-size:0.88rem; line-height:1.6; margin-top:0.6rem;">
         <li>Every candidate order gets each ticked scorer's <em>raw</em> score —
             read straight from the scoring step, nothing recomputed.</li>
-        <li>Only scorers with a declared direction vote (all seven built-ins have
+        <li>Only scorers with a declared direction vote (all nine built-ins have
             one).</li>
         <li>Per scorer, the scores are z-scored <em>across this sentence's
             candidates only</em>, and the sign is flipped where needed so that
@@ -658,7 +683,9 @@
             a number for it — a feature that fails to compute (a blank
             <code>NaN</code> cell, say when Java is unavailable for the PCFG
             scorers) drops out of that candidate's average rather than counting as
-            zero. All seven built-ins carry a fitted weight:
+            zero. All nine built-ins carry a fitted weight:
+            <code>Delta_AdaptiveWiki50M</code> 6.067,
+            <code>Delta_LSTMWiki50M</code> 6.059,
             <code>Delta_Trigram</code> 4.950, <code>Delta_Adaptive</code> 1.822,
             <code>Delta_LSTM</code> 1.820, <code>Delta_PCFG</code> 0.896,
             <code>Delta_Surprisal</code> 0.872, <code>Delta_DL</code> 0.638,

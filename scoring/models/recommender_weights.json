@@ -6,7 +6,9 @@
     "Delta_LSTM": 1.82,
     "Delta_Adaptive": 1.822,
     "Delta_PCFG": 0.8956,
-    "Delta_Surprisal": 0.8721
+    "Delta_Surprisal": 0.8721,
+    "Delta_LSTMWiki50M": 6.0591,
+    "Delta_AdaptiveWiki50M": 6.0666
   },
   "meta": {
     "predictors": {
@@ -51,6 +53,18 @@
         "accuracy": 0.5938,
         "n": 92299,
         "source": "Taru synproc on features.csv surfaces (Docker)"
+      },
+      "Delta_LSTMWiki50M": {
+        "coefficient": -6.0591,
+        "accuracy": 0.926,
+        "n": 92299,
+        "source": "audit rebuild on the research features.csv (92,299 HDTB pairs); same Joachims + 10-fold CV fit as the other entries"
+      },
+      "Delta_AdaptiveWiki50M": {
+        "coefficient": -6.0666,
+        "accuracy": 0.9263,
+        "n": 92299,
+        "source": "audit rebuild on the research features.csv (92,299 HDTB pairs); same Joachims + 10-fold CV fit as the other entries"
       }
     },
     "method": "abs(standardized univariate logistic coefficient), Joachims pairwise transform, C=1e6",
@@ -59,7 +73,8 @@
       "Delta_DL": "prior full-HDTB fit (hi_hdtb-ud-train.conllu, 193474 pairs)",
       "others": "Ranjan & van Schijndel research features.csv (hi_hdtb-ud-train.conllu, SOV+DOSV+IOSV, 92,299 pairs; same models as our scorers)",
       "Delta_Surprisal": "computed on those pairs' surfaces via Taru synproc (batch_surprisal.py, Docker)",
-      "Delta_Trigram": "refit 2026-08-29 when the trigram scorer was replaced by the Katz-backoff model. Same 92,299 pairs and same univariate fit that produced the old 1.8816 / 77.09%, so this is a like-for-like upgrade on identical rows: 77.09% -> 89.52%. Almost all of the gain is the scoring function (<s> <s> padding and training-time normalization), not the model — the old pickle scored the new way reaches 82.14% against the new model's 82.16% on the app's 48,864 Paninian pairs. See trigram_compare/REPORT.md."
+      "Delta_Trigram": "refit 2026-08-29 when the trigram scorer was replaced by the Katz-backoff model. Same 92,299 pairs and same univariate fit that produced the old 1.8816 / 77.09%, so this is a like-for-like upgrade on identical rows: 77.09% -> 89.52%. Almost all of the gain is the scoring function (<s> <s> padding and training-time normalization), not the model — the old pickle scored the new way reaches 82.14% against the new model's 82.16% on the app's 48,864 Paninian pairs. See trigram_compare/REPORT.md.",
+      "Delta_LSTMWiki50M / Delta_AdaptiveWiki50M": "added 2026-08-30 as NEW scorers beside lstm / adaptive_lstm, which keep their 1.820 / 1.822 weights unchanged so existing variants.csv files stay comparable. Fitted on the same 92,299 pairs as the rest. The gain over the older pair is 77.45% -> 92.60%, of which +5.65 is the scoring fix (<SOS>/<EOS> padding plus training-time normalisation) and +9.50 the retrained checkpoint (50.8M tokens vs ~2M; held-out perplexity 79.65 vs 380.71 on the identical split). The checkpoint stopped on a 25-minute training budget rather than convergence, so these are a floor. See D:/audit/lstm/FINDINGS.md."
     }
   }
 }

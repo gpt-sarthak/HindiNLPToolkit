@@ -19,9 +19,10 @@ each scorer predicts the attested word order.
 
 - **Filter** raw or annotated Hindi sentences down to clean, permutable clauses.
 - **Generate variants** by reordering preverbal constituents (surface pairs).
-- **Score** each pair with 7 plugin scorers: dependency length, information
+- **Score** each pair with 9 plugin scorers: dependency length, information
   status, incremental constituency **surprisal** (Taru), **trigram**, **LSTM**,
-  **adaptive LSTM**, and a Berkeley **PCFG** log-likelihood.
+  **adaptive LSTM**, a Berkeley **PCFG** log-likelihood, and the retrained
+  **LSTM (Wikipedia 50M)** pair.
 - **Evaluate** pairwise ranking accuracy (File mode) or **recommend** the most
   natural word order for a single typed sentence (Sentence mode).
 
