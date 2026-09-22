@@ -42,7 +42,7 @@ class LSTMWiki50MScorer(Scorer):
         "sentence boundaries.\n"
         "Feature in CSV: Delta_LSTMWiki50M."
     )
-    trained_on = "50.8M tokens of Hindi Wikipedia, 30k vocabulary"
+    trained_on = "50.8M tokens of Hindi Wikipedia (dumps.wikimedia.org/hiwiki), 30k vocabulary"
     built_with = "2-layer LSTM language model"
     notes = "surprisal in nats; batched, so a corpus pass is fast"
     higher_is_more_natural = {"Delta_LSTMWiki50M": False}  # lower = more natural

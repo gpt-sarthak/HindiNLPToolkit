@@ -48,7 +48,7 @@ class TrigramScorer(Scorer):
         "sentence boundaries.\n"
         "Feature in CSV: Delta_Trigram."
     )
-    trained_on = "1M Hindi Wikipedia sentences, 30k vocabulary"
+    trained_on = "1M Hindi Wikipedia sentences (dumps.wikimedia.org/hiwiki), 30k vocabulary"
     built_with = "Katz backoff over Good-Turing discounted counts"
     notes = "surprisal in bits; memory-mapped, so it loads instantly"
     higher_is_more_natural = {"Delta_Trigram": False}  # lower surprisal = more natural

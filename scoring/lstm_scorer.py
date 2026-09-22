@@ -31,7 +31,7 @@ class LSTMScorer(Scorer):
         "LSTM language-model surprisal of each word order.\n"
         "Feature in CSV: Delta_LSTM."
     )
-    trained_on = "Hindi Wikipedia"
+    trained_on = "Hindi Wikipedia (dumps.wikimedia.org/hiwiki)"
     built_with = "2-layer LSTM language model"
     higher_is_more_natural = {"Delta_LSTM": False}  # lower surprisal = more natural
 
