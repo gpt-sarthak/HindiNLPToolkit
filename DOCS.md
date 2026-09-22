@@ -1002,7 +1002,7 @@ are summed to a sentence total (bits).
 
 ### Built-in scorer: `trigram`
 
-- **Trained on:** 1M Hindi Wikipedia sentences, 30k vocabulary
+- **Trained on:** 1M Hindi Wikipedia sentences (dumps.wikimedia.org/hiwiki), 30k vocabulary
 - **Built with:** Katz backoff over Good-Turing discounted counts
 - **Notes:** surprisal in bits; memory-mapped, so it loads instantly
 
@@ -1050,7 +1050,7 @@ figures are). And `Delta_Trigram`'s recommender weight was refit on the same
 
 ### Built-in scorer: `lstm`
 
-- **Trained on:** Hindi Wikipedia
+- **Trained on:** Hindi Wikipedia (dumps.wikimedia.org/hiwiki)
 - **Built with:** 2-layer LSTM language model
 
 Base LSTM language-model surprisal, from a 2-layer LSTM (Embedding 256 → LSTM
@@ -1065,7 +1065,7 @@ Base LSTM language-model surprisal, from a 2-layer LSTM (Embedding 256 → LSTM
 
 ### Built-in scorer: `adaptive_lstm`
 
-- **Trained on:** Hindi Wikipedia (base LSTM)
+- **Trained on:** Hindi Wikipedia (dumps.wikimedia.org/hiwiki), base LSTM
 - **Built with:** base LSTM + one-step online adaptation
 - **Requires:** a context sentence
 
@@ -1090,13 +1090,20 @@ runs and the score equals the plain `lstm` surprisal.
 
 ### Built-in scorer: `lstm_wiki50m`
 
-- **Trained on:** 50.8M tokens of Hindi Wikipedia, 30k vocabulary
+- **Trained on:** 50.8M tokens of Hindi Wikipedia (dumps.wikimedia.org/hiwiki), 30k vocabulary
 - **Built with:** 2-layer LSTM language model
 - **Notes:** surprisal in nats; batched, so a corpus pass is fast
 
 The same quantity as `lstm` — total LSTM surprisal of a word order — from a
 checkpoint retrained on the full Wikipedia corpus
-(`scoring/models/base_model_wiki50m.pt`, 65 MB). It ships **alongside** `lstm`,
+(`scoring/models/base_model_wiki50m.pt`, 65 MB). That corpus — shared by every
+Wikipedia-trained scorer here (`trigram`, `lstm`, `adaptive_lstm` and this pair)
+— is the official Wikimedia dump
+<https://dumps.wikimedia.org/hiwiki/latest/hiwiki-latest-pages-articles.xml.bz2>
+(index: <https://dumps.wikimedia.org/hiwiki/>; `latest/` is a moving symlink —
+the copy used was downloaded 2026-02-19), extracted with mwxml +
+mwparserfromhell and sentence-split with a Devanagari-only cleaner to 2.71M
+sentences / 50.8M tokens. It ships **alongside** `lstm`,
 not as a replacement, so `Delta_LSTM`'s committed weight stays valid and
 `variants.csv` files produced before it existed remain comparable.
 
@@ -1128,7 +1135,7 @@ validation loss was still falling — so 92.60% is a floor. Full audit:
 
 ### Built-in scorer: `adaptive_lstm_wiki50m`
 
-- **Trained on:** 50.8M tokens of Hindi Wikipedia, 30k vocabulary
+- **Trained on:** 50.8M tokens of Hindi Wikipedia (dumps.wikimedia.org/hiwiki), 30k vocabulary
 - **Built with:** 2-layer LSTM + one-step online adaptation
 - **Notes:** surprisal in nats; deterministic, unlike the older adaptive scorer
 

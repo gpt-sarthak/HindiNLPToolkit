@@ -48,7 +48,7 @@ class AdaptiveLSTMWiki50MScorer(Scorer):
         "every word including the sentence boundaries.\n"
         "Feature in CSV: Delta_AdaptiveWiki50M."
     )
-    trained_on = "50.8M tokens of Hindi Wikipedia, 30k vocabulary"
+    trained_on = "50.8M tokens of Hindi Wikipedia (dumps.wikimedia.org/hiwiki), 30k vocabulary"
     built_with = "2-layer LSTM + one-step online adaptation"
     notes = "surprisal in nats; deterministic, unlike the older adaptive scorer"
     needs_previous_sentence = True

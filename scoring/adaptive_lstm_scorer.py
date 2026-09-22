@@ -47,7 +47,7 @@ class AdaptiveLSTMScorer(Scorer):
         "the preceding sentence.\n"
         "Feature in CSV: Delta_Adaptive."
     )
-    trained_on = "Hindi Wikipedia (base LSTM)"
+    trained_on = "Hindi Wikipedia (dumps.wikimedia.org/hiwiki), base LSTM"
     built_with = "base LSTM + one-step online adaptation"
     needs_previous_sentence = True
     higher_is_more_natural = {"Delta_Adaptive": False}  # lower surprisal = more natural
