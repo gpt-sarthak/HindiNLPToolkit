@@ -23,10 +23,11 @@ z-scored data with ``C=1e6`` (effectively unregularised, matching R's
 Confidence intervals around the accuracies are currently **suppressed** — see
 ``INCLUDE_CI`` below.
 
-    from evaluation import evaluate_pairs
+    from evaluation import evaluate_pairs, evaluate_by_construction
 
     result = evaluate_pairs(pairs_df)          # every Delta_* column
     result = evaluate_pairs(pairs_df, deltas=["Delta_DL", "Delta_Trigram"])
+    per_construction = evaluate_by_construction(pairs_df)   # paper Table 4
 """
 
 from __future__ import annotations
@@ -239,3 +240,92 @@ def evaluate_pairs(
         "predictors": predictors,
         "combined": combined,
     }
+
+
+# ---------------------------------------------------------------------------
+# Per-construction evaluation (paper Table 4)
+# ---------------------------------------------------------------------------
+
+#: The three constructions of Ranjan & van Schijndel (2024), Table 4, as
+#: ``(key, label, reference labels)``.  OSV is the union of the other two.
+CONSTRUCTIONS = [
+    ("OSV", "Object-fronted (Ref OSV vs Var SOV)", frozenset({"DOSV", "IOSV"})),
+    ("DOSV", "Direct-object-fronted (Ref DOSV vs Var SDOV)", frozenset({"DOSV"})),
+    ("IOSV", "Indirect-object-fronted (Ref IOSV vs Var SIOV)", frozenset({"IOSV"})),
+]
+
+_WORD_ORDER_COLUMNS = ("Reference_Word_Order", "Variant_Word_Order")
+
+
+def construction_mask(pairs_df: pd.DataFrame, reference_labels) -> pd.Series:
+    """Boolean mask of the pairs that belong to one construction: the reference
+    carries one of *reference_labels* **and** the variant is canonical
+    (``SOV``) — a non-canonical original against its canonical counterpart,
+    which is what the paper's column headings describe."""
+    return (
+        pairs_df["Reference_Word_Order"].isin(reference_labels)
+        & (pairs_df["Variant_Word_Order"] == "SOV")
+    )
+
+
+def evaluate_by_construction(
+    pairs_df: pd.DataFrame,
+    deltas: Optional[List[str]] = None,
+    labels: Optional[Dict[str, str]] = None,
+    min_pairs: int = 1,
+    folds: int = 10,
+    seed: int = 42,
+) -> List[dict]:
+    """
+    Ranking accuracy per word-order construction — the paper's Table 4 rows.
+
+    Needs the ``Reference_Word_Order`` / ``Variant_Word_Order`` columns from
+    ``variants.label_word_orders``.  Each construction's subset is a
+    non-canonical reference (``DOSV`` / ``IOSV`` / either, for ``OSV``) paired
+    with a canonical ``SOV`` variant, so the DOSV and IOSV subsets are disjoint
+    and the OSV subset is exactly their union.  This is stricter than the
+    research reproduction's OSV row (which keeps every variant of an
+    object-fronted reference); the paper's own pair counts cannot be
+    reconstructed from its text, so treat cross-paper comparisons as
+    indicative.
+
+    Parameters
+    ----------
+    pairs_df, deltas, labels, folds, seed : as for :func:`evaluate_pairs`.
+    min_pairs : subsets with fewer rows are reported as ``insufficient_pairs``
+                rather than evaluated (the web app passes its 200-pair policy).
+
+    Returns
+    -------
+    A list with one dict per construction, in ``CONSTRUCTIONS`` order:
+    ``key``, ``label``, ``n_pairs`` and ``status`` — ``"ok"`` (plus the full
+    :func:`evaluate_pairs` result), ``"insufficient_pairs"``, or
+    ``"not_evaluable"`` with a ``detail`` message when the subset cannot be
+    scored (too few usable rows, or one ``ML_Label`` class).
+
+    Raises
+    ------
+    ValueError if the word-order columns are missing.
+    """
+    missing = [c for c in _WORD_ORDER_COLUMNS if c not in pairs_df.columns]
+    if missing:
+        raise ValueError(
+            f"pairs_df lacks {missing} — join variants.label_word_orders() first."
+        )
+    results = []
+    for key, label, ref_labels in CONSTRUCTIONS:
+        sub = pairs_df[construction_mask(pairs_df, ref_labels)]
+        entry = {"key": key, "label": label, "n_pairs": int(len(sub))}
+        if len(sub) < max(min_pairs, 1):
+            entry["status"] = "insufficient_pairs"
+        else:
+            try:
+                res = evaluate_pairs(sub, deltas=deltas, folds=folds, seed=seed, labels=labels)
+            except ValueError as exc:
+                entry["status"] = "not_evaluable"
+                entry["detail"] = str(exc)
+            else:
+                entry["status"] = "ok"
+                entry.update(res)
+        results.append(entry)
+    return results

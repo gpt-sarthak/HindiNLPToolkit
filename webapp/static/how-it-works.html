@@ -316,7 +316,10 @@
           </summary>
           <div class="flow-body">
             <p>Seven filters run in a fixed order; a sentence must pass all of them.
-               The "Filter summary" card reports how many failed at each step.</p>
+               The "Filter summary" card reports how many failed at each step, and
+               how many of the survivors are canonical <em>SOV</em> versus
+               object-fronted <em>OSV</em> (DOSV + IOSV) — see the variants step
+               for what those labels mean.</p>
             <ol>
               <li><strong>Interrogative</strong> — rejected if the sentence contains
                   <code>?</code>, a <code>WQ</code> tag, or an interrogative pronoun
@@ -373,6 +376,17 @@
                signal</em> (1 = reference listed first, 0 = flipped), alternating row
                by row for a 50/50 balance — see
                <a href="#deltas">the Delta columns</a> for why.</p>
+            <p>Two <strong>word-order labels</strong> are then joined on —
+               <code>Reference_Word_Order</code> and <code>Variant_Word_Order</code>,
+               each <code>SOV</code>, <code>DOSV</code> or <code>IOSV</code> — naming
+               the construction each side instantiates (Ranjan &amp; van Schijndel
+               2024, Table 1): <em>SOV</em> is canonical (subject before every
+               object), <em>DOSV</em> has a direct object before the subject,
+               <em>IOSV</em> an indirect object before it. The paper's
+               <em>OSV</em> (object-fronted) class is simply DOSV <em>or</em> IOSV —
+               it is never a separate value, and when both objects are fronted the
+               label is DOSV. These are metadata, not scores: no scorer reads
+               them.</p>
             <p>In File mode a <strong>grammar filter</strong> additionally drops
                reorderings whose adjacent dependency-label pairs never occur anywhere
                in the uploaded corpus — a cheap plausibility check. Sentence mode
@@ -661,6 +675,16 @@
          combined ≈ 62.6%. Small uploads give noisy accuracy — that is why
          evaluation requires at least 200 pairs (below the floor the card reports
          "insufficient pairs") and why serious numbers need a full corpus.</p>
+      <p><strong>Per construction.</strong> Below the overall table the same
+         measurement is repeated for the paper's three constructions (its
+         Table 4): object-fronted references (<em>OSV</em> = DOSV or IOSV),
+         direct-object-fronted (<em>DOSV</em>) and indirect-object-fronted
+         (<em>IOSV</em>), each paired only with its canonical <em>SOV</em>
+         variants — a non-canonical original against the order a speaker chose
+         not to use. DOSV and IOSV are disjoint subsets and OSV is exactly their
+         union. Each subset needs its own 200 pairs, and only 10–15% of
+         references are object-fronted, so expect "not enough data" here on
+         anything but a sizeable corpus.</p>
     </section>
 
     <!-- ── 06 · The recommendation score ── -->

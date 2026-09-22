@@ -97,6 +97,7 @@ columns are **always present**:
 | `ML_Label` | flip signal: `1` = reference shown first, `0` = variant shown first |
 | `Reference_Sentence` | surface text of the original order |
 | `Variant_Sentence` | surface text of the reordered variant |
+| `Reference_Word_Order` / `Variant_Word_Order` | construction of each side — `SOV`, `DOSV` or `IOSV` (the paper's OSV = DOSV or IOSV); present in the web app, and whenever the caller joined `variants.label_word_orders` |
 
 Rules — **do not break these:**
 
@@ -222,7 +223,12 @@ out = apply_scorers(pairs_df, ["<your-name>"], context=context)
 - **Don't commit** `venv/`, `__pycache__/`, model weights, or large corpora —
   `.gitignore` already covers the common cases; add your weight files if needed.
 - Reusable, scorer-agnostic primitives (previous-sentence lookup, rebuilding a
-  variant's tree) live in `helpers/` — check there before writing your own.
+  variant's tree, the SOV / DOSV / IOSV word-order rule) live in `helpers/` —
+  check there before writing your own.
+- The word-order label columns are **metadata, not features**: read them if
+  you like (`"Reference_Word_Order" in pairs_df.columns` — they are not
+  guaranteed outside the web app), but never treat them as a `*_Reference` /
+  `*_Variant` pair, and never rely on their position in the table.
 - **Adding a scorer? Also add a tile** for it to the user-facing guide at
   `webapp/static/how-it-works.html` (served at `/how-it-works`) — that page is
   deliberately hand-written, not generated from `/api/plugins`.
