@@ -258,6 +258,8 @@
   table.eval td.n { font-family: var(--mono); text-align: right; white-space: nowrap; }
   table.eval td.acc { font-family: var(--mono); white-space: nowrap; min-width: 9rem; }
   table.eval tr.combined td { font-weight: 600; }
+  h3.eval-sub { font-size: 0.8rem; margin: 1.1rem 0 0.4rem; }
+  h3.eval-sub .eval-dir { display: inline; margin-left: 0.4rem; font-weight: 400; }
   .eval-dir { display: block; font-size: 0.68rem; color: var(--ink-soft); font-weight: 400; margin-top: 0.15rem; }
   .acc-bar { position: relative; height: 5px; background: var(--paper-deep); margin-top: 5px; }
   .acc-bar i { display: block; position: absolute; top: 0; height: 100%; background: var(--vermilion); }
@@ -990,6 +992,32 @@ function renderEvaluation(ev) {
     return;
   }
 
+  body.appendChild(evalTable(ev));
+
+  // Paper Table 4: the same measurement per word-order construction (an
+  // object-fronted reference against its canonical SOV variants).  Older
+  // evaluation.json files have no `constructions` key — then nothing renders.
+  for (const c of ev.constructions || []) {
+    const h = document.createElement("h3");
+    h.className = "eval-sub";
+    h.innerHTML = `${esc(c.label)} <span class="eval-dir">${c.n_pairs} pairs</span>`;
+    body.appendChild(h);
+    if (c.status === "ok") {
+      body.appendChild(evalTable(c));
+    } else {
+      const note = document.createElement("p");
+      note.className = "idle-note";
+      note.textContent = c.status === "insufficient_pairs"
+        ? `Not enough data: ${c.n_pairs} pairs of this construction, at least ${ev.min_pairs} are needed.`
+        : `Could not evaluate this construction: ${c.detail || c.status}.`;
+      body.appendChild(note);
+    }
+  }
+}
+
+// One Predictor / Accuracy / Pairs table for an evaluate_pairs() result
+// (the overall table and each per-construction table share it).
+function evalTable(res) {
   const table = document.createElement("table");
   table.className = "eval";
   table.innerHTML = "<thead><tr><th>Predictor</th><th>Accuracy</th><th style='text-align:right'>Pairs</th></tr></thead>";
@@ -1009,16 +1037,16 @@ function renderEvaluation(ev) {
       <div class="acc-bar"><i style="left:${left}%;width:${width}%"></i><span class="chance"></span></div>`;
   };
 
-  if (ev.combined) {
+  if (res.combined) {
     const tr = document.createElement("tr");
     tr.className = "combined";
     tr.innerHTML = `<td>All predictors combined
-        <span class="eval-dir">${ev.combined.deltas.length} features, one model</span></td>
-      <td class="acc">${accCell(ev.combined.accuracy, ev.combined.ci_low, ev.combined.ci_high)}</td>
-      <td class="n">${ev.combined.n}</td>`;
+        <span class="eval-dir">${res.combined.deltas.length} features, one model</span></td>
+      <td class="acc">${accCell(res.combined.accuracy, res.combined.ci_low, res.combined.ci_high)}</td>
+      <td class="n">${res.combined.n}</td>`;
     tbody.appendChild(tr);
   }
-  for (const p of ev.predictors) {
+  for (const p of res.predictors) {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td><span class="sname">${esc(p.label)}</span>
         <span class="eval-dir">${esc(p.direction)} · coefficient ${p.coefficient}</span></td>
@@ -1027,7 +1055,7 @@ function renderEvaluation(ev) {
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  body.appendChild(table);
+  return table;
 }
 
 function renderSummary(s) {
@@ -1041,6 +1069,15 @@ function renderSummary(s) {
     [(s.pass_rate * 100).toFixed(1) + "%", "pass rate", true],
     [s.avg_constituent_count, "avg constituents"],
   ];
+  // Word-order constructions of the passed references (paper Table 1).  OSV is
+  // DOSV + IOSV; older summary.json files lack the key, so the tiles are
+  // skipped rather than showing NaN.
+  const wo = s.word_order_distribution;
+  if (wo) {
+    const dosv = wo.DOSV || 0, iosv = wo.IOSV || 0;
+    items.push([wo.SOV || 0, "SOV (canonical)"]);
+    items.push([dosv + iosv, `OSV · DOSV ${dosv} / IOSV ${iosv}`]);
+  }
   for (const [v, k, accent] of items) {
     const d = document.createElement("div");
     d.className = "stat" + (accent ? " accent" : "");

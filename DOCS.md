@@ -474,7 +474,9 @@ A single `pandas.DataFrame` (`pairs_df`) with exactly these columns:
 | `Variant_Sentence` | Variant surface text |
 
 Feature columns (`DL_Reference`, `DL_Variant`, `Delta_DL`, `IS_*`, …) are added
-later by scorers — see the scoring section below. The web app also appends the
+later by scorers — see the scoring section below. The web app also joins the
+word-order construction labels (`Reference_Word_Order` / `Variant_Word_Order`,
+see `label_word_orders` next) right after generation, and appends the
 recommended word order (`Recommended_Sentence` / `Recommended_Is_Reference` /
 `Recommended_Score`) to `variants.csv` when scorers run — see `recommend_column`.
 
@@ -484,6 +486,51 @@ recommended word order (`Recommended_Sentence` / `Recommended_Is_Reference` /
 ```python
 pairs_df = generate_variants(passed, output_dir="output/")
 ```
+
+---
+
+### `label_word_orders(pairs_df, passed)`
+
+Labels both sides of every pair with the word-order **construction** of
+Ranjan & van Schijndel (2024), Table 1, and returns a two-column DataFrame
+aligned to `pairs_df.index`, ready to `join`:
+
+```python
+from variants import generate_variants, label_word_orders
+
+pairs_df = generate_variants(passed)
+pairs_df = pairs_df.join(label_word_orders(pairs_df, passed))
+```
+
+| Column | Values | Description |
+|---|---|---|
+| `Reference_Word_Order` | `SOV` / `DOSV` / `IOSV` | Construction of the corpus reference |
+| `Variant_Word_Order` | `SOV` / `DOSV` / `IOSV` | Construction of the reordered variant |
+
+- `SOV` — canonical: the subject precedes every object.
+- `DOSV` — a **direct object** precedes the subject.
+- `IOSV` — an **indirect object** precedes the subject, and no direct object does.
+- **`OSV` (object-fronted) is never stored — it is `DOSV` *or* `IOSV`.** The
+  paper's own Table 1 shows OSV as the union of the two (233 ≈ 133 + 101), and
+  when both objects are fronted the label is `DOSV` (the direct-object test
+  runs first). Filter on `label in {"DOSV", "IOSV"}` or `helpers.is_osv`.
+
+The rule (`helpers.classify_word_order`) reads the preverbal constituents'
+root-attached deprels in surface order, unions both annotation schemes with the
+same sets filter 7 uses (subject `nsubj` / `nsubj:pass` / `k1`; direct object
+`obj` / `k2`; indirect object `iobj` / `k4`), and compares the *first*
+constituent of each role. The reference's order comes straight from the parse;
+the variant's is recovered from its surface with `helpers.recover_permutation`
+(the same block-matching every positional scorer relies on). A clause with an
+object but no preverbal subject counts as object-fronted (reachable only with
+`require_core_args=False`); one with no object at all is `SOV`. Unknown
+`Sent_ID`s get empty strings.
+
+These columns are **metadata, not features**: no scorer reads them and the
+central diff step ignores them. `generate_variants` itself stays surface-only.
+Measured on the bundled corpora (2026-09-12): Paninian 1,726 passed → SOV
+1,480 / DOSV 178 / IOSV 68; UD-HDTB 2,298 passed → SOV 2,053 / DOSV 155 /
+IOSV 90 (the paper reports 11.67% OSV; these give 14.3% / 10.7%).
 
 ---
 
@@ -509,6 +556,7 @@ summary = summarize(passed, rejected_df)
 | `avg_sentence_length` | float | Mean token count of passed sentences |
 | `avg_constituent_count` | float | Mean preverbal constituent count of passed sentences |
 | `constituent_count_distribution` | dict | `{n_constituents: sentence_count}` |
+| `word_order_distribution` | dict | `{"SOV": n, "DOSV": n, "IOSV": n}` — construction of each passed reference (see `label_word_orders`); all three keys always present, summing to `total_passed`. OSV = DOSV + IOSV. |
 
 The `filter_order` list groups all `"Non-verbal root: …"` variants under a single
 `"Non-verbal root"` entry so each stage is represented exactly once regardless of how
@@ -613,9 +661,13 @@ served at `/how-it-works` — intentionally not linked from the UI, and static
   which is why typed input turns it off.
 - **Downloads per stage** (available as soon as each stage finishes):
   `parsed.conllu` (only for `.txt` input), `passed_sentences.csv`,
-  `rejected_sentences.csv`, `summary.json`, `variants.csv`
-  (reference/variant pairs with `Sent_ID`/`Variant_ID` plus scorer columns and,
-  when scorers run, the `Recommended_*` word-order columns),
+  `rejected_sentences.csv`, `summary.json` (filter counts plus the
+  `word_order_distribution` of the passed references, shown as SOV / OSV tiles
+  on the filter card), `variants.csv`
+  (reference/variant pairs with `Sent_ID`/`Variant_ID`, the
+  `Reference_Word_Order` / `Variant_Word_Order` construction labels, then
+  scorer columns and, when scorers run, the `Recommended_*` word-order
+  columns),
   `evaluation.json` (only when *Evaluate predictor accuracy* was ticked), and
   `recommendation.json` (Sentence mode, unless the recommendation was unticked —
   the recommended word order and the full candidate ranking).
@@ -787,6 +839,25 @@ and the head pointers that reference them (the variant is a re-ordering of the
 same words). Lower-level pieces are also exported: `recover_permutation`,
 `reindex_tokens`, `block_start_index`. Pass `perm=` to skip block-matching when
 the constituent order is already known.
+
+### Word-order classification (`helpers/word_order.py`)
+
+The construction rule behind `variants.label_word_orders` and
+`summarize()["word_order_distribution"]`, usable on any deprel sequence:
+
+```python
+from helpers import classify_word_order, constituent_deprel, is_osv
+
+deprels = [constituent_deprel(c, root_id) for c in constituents]   # surface order
+classify_word_order(deprels)      # 'SOV' | 'DOSV' | 'IOSV'
+is_osv(label)                     # True for DOSV and IOSV (the paper's OSV class)
+```
+
+`DOSV` if a direct object (`obj` / `k2`) precedes the subject (`nsubj` /
+`nsubj:pass` / `k1`); else `IOSV` if an indirect object (`iobj` / `k4`) does;
+else `SOV`. The relation sets are exported (`SUBJECT_DEPRELS`,
+`DIRECT_OBJECT_DEPRELS`, `INDIRECT_OBJECT_DEPRELS`), as are `WORD_ORDER_LABELS`
+and `OSV_LABELS`.
 
 ### Cancellation (`helpers/cancellation.py`)
 
@@ -1323,6 +1394,42 @@ optional, so nothing else needs changing.
 **Every scorer that declares `deltas()` is automatically a predictor** — there
 is nothing extra to implement when adding a scorer.
 
+### `evaluate_by_construction(pairs_df, deltas=None, labels=None, min_pairs=1, folds=10, seed=42)`
+
+The paper's Table 4: the same measurement repeated per word-order construction.
+Needs the `Reference_Word_Order` / `Variant_Word_Order` columns from
+`variants.label_word_orders`.
+
+```python
+from evaluation import evaluate_by_construction
+
+for entry in evaluate_by_construction(pairs_df, min_pairs=200):
+    print(entry["key"], entry["n_pairs"], entry["status"])
+```
+
+Returns a list with one dict per construction, in this fixed order:
+
+| `key` | `label` | Subset |
+|---|---|---|
+| `OSV` | Object-fronted (Ref OSV vs Var SOV) | reference `DOSV` or `IOSV`, variant `SOV` |
+| `DOSV` | Direct-object-fronted (Ref DOSV vs Var SDOV) | reference `DOSV`, variant `SOV` |
+| `IOSV` | Indirect-object-fronted (Ref IOSV vs Var SIOV) | reference `IOSV`, variant `SOV` |
+
+Each entry carries `key`, `label`, `n_pairs` and `status`: `"ok"` (plus the
+full `evaluate_pairs` result — `predictors`, `combined`, …),
+`"insufficient_pairs"` (fewer than `min_pairs` rows) or `"not_evaluable"`
+(with `detail`; too few usable rows or a single `ML_Label` class). Raises
+`ValueError` if the label columns are missing. The subset masks are exposed as
+`construction_mask(pairs_df, reference_labels)` and the table as
+`CONSTRUCTIONS`.
+
+Every subset pairs a **non-canonical reference with a canonical variant**, so
+`DOSV` and `IOSV` are disjoint and `OSV` is exactly their union. This is
+stricter than the research reproduction's OSV row (which keeps every variant of
+an object-fronted reference), and the paper's own pair counts cannot be
+reconstructed from its text — treat comparisons with its Table 4 (trigram:
+OSV 83.16 / DOSV 78.95 / IOSV 87.29) as indicative, not controlled.
+
 ### In the web app
 
 Tick **Evaluate predictor accuracy** (File mode only; Sentence mode never
@@ -1335,3 +1442,10 @@ carry `ci_low`/`ci_high` — see the note above.) Fewer than **200 pairs** (or n
 `status: "insufficient_pairs"` / `"no_predictors"` stub and an explanatory
 note instead of numbers — the threshold lives in `webapp/pipeline.py`
 (`MIN_EVAL_PAIRS`), not in the library.
+
+Below the overall table the card repeats the measurement **per construction**
+(`evaluation.json` → `constructions`, from `evaluate_by_construction` under the
+same 200-pair policy): one heading and table each for OSV, DOSV and IOSV
+references against their SOV variants, or a "not enough data" note when a
+construction has too few pairs — expect that on small uploads, since only
+~10–15% of references are object-fronted.

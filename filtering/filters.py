@@ -37,6 +37,8 @@ import numpy as np
 import pandas as pd
 from conllu import TokenList
 
+from helpers import WORD_ORDER_LABELS, classify_word_order
+
 # Default POS tags accepted on the sentence root for preverbal analysis.
 _DEFAULT_ALLOWED_POS: Tuple[str, ...] = ("VERB", "AUX", "VM", "VAUX")
 
@@ -813,6 +815,11 @@ def summarize(
     avg_sentence_length       : float — mean token count of passed sentences
     avg_constituent_count          : float — mean preverbal constituent count
     constituent_count_distribution : dict  — {n_constituents: sentence_count}
+    word_order_distribution   : dict  — {"SOV": n, "DOSV": n, "IOSV": n}, the
+                                        construction of each passed reference
+                                        (``helpers.classify_word_order``; the
+                                        paper's OSV = DOSV + IOSV); always all
+                                        three keys, summing to total_passed
 
     Example
     -------
@@ -852,11 +859,14 @@ def summarize(
 
     sent_lengths: List[int] = []
     constituent_counts: List[int] = []
+    word_order_dist: Dict[str, int] = {label: 0 for label in WORD_ORDER_LABELS}
     for item in passed_list:
         sent_lengths.append(
             sum(1 for tok in item["sentence"] if isinstance(tok["id"], int))
         )
         constituent_counts.append(len(item["constituents"]))
+        deprels = [_get_constituent_deprel(c, item["root_id"]) for c in item["constituents"]]
+        word_order_dist[classify_word_order(deprels)] += 1
 
     constituent_dist: Dict[int, int] = defaultdict(int)
     for c in constituent_counts:
@@ -872,4 +882,5 @@ def summarize(
         "avg_sentence_length": round(float(np.mean(sent_lengths)), 2) if sent_lengths else 0.0,
         "avg_constituent_count": round(float(np.mean(constituent_counts)), 2) if constituent_counts else 0.0,
         "constituent_count_distribution": dict(sorted(constituent_dist.items())),
+        "word_order_distribution": word_order_dist,
     }

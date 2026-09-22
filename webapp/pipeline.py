@@ -35,8 +35,9 @@ def _evaluation_payload(pairs_df) -> dict:
     if len(pairs_df) < MIN_EVAL_PAIRS:
         return {"status": "insufficient_pairs", **base}
 
-    from evaluation import evaluate_pairs
+    from evaluation import evaluate_by_construction, evaluate_pairs
     from scoring import get_scorers
+    from variants import WORD_ORDER_COLUMNS
 
     # Present each delta under the title of the scorer that declared it.
     labels = {
@@ -45,7 +46,15 @@ def _evaluation_payload(pairs_df) -> dict:
         for (col, _ref_fn, _var_fn) in scorer.deltas()
     }
     result = evaluate_pairs(pairs_df, deltas=delta_cols, labels=labels)
-    return {"status": "ok", "min_pairs": MIN_EVAL_PAIRS, **result}
+    payload = {"status": "ok", "min_pairs": MIN_EVAL_PAIRS, **result}
+    # Paper Table 4: the same measurement per word-order construction (OSV /
+    # DOSV / IOSV references vs canonical variants), each under the same
+    # 200-pair policy.
+    if all(c in pairs_df.columns for c in WORD_ORDER_COLUMNS):
+        payload["constructions"] = evaluate_by_construction(
+            pairs_df, deltas=delta_cols, labels=labels, min_pairs=MIN_EVAL_PAIRS
+        )
+    return payload
 
 
 def _recommendation_payload(pairs_df, scorer_names) -> dict:
@@ -91,7 +100,7 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
     from filtering import filter_sentences, summarize
     from scoring import apply_scorers, build_corpus_context, recommend_column
     from stanza_parser import load_input
-    from variants import generate_variants
+    from variants import generate_variants, label_word_orders
 
     out = jobs.job_dir(job.job_id)
 
@@ -160,6 +169,12 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
         valid_deprel_pairs=valid_pairs,
         max_variants=options.get("max_variants", 99),
     )
+    # Word-order construction labels (SOV / DOSV / IOSV) for both sides of
+    # every pair — surface metadata, joined before any scorer so they are in
+    # variants.csv in both modes, with or without scorers, and in the
+    # cancel-flush below.
+    if not pairs_df.empty:
+        pairs_df = pairs_df.join(label_word_orders(pairs_df, passed))
     heartbeat()
     scorer_names = options.get("scorers") or []
     if scorer_names and not pairs_df.empty:
