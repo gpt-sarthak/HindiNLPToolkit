@@ -1403,7 +1403,8 @@ is nothing extra to implement when adding a scorer.
 
 ### `evaluate_by_construction(pairs_df, deltas=None, labels=None, min_pairs=1, folds=10, seed=42)`
 
-The paper's Table 4: the same measurement repeated per word-order construction.
+The same measurement repeated per word-order construction: a canonical `SOV`
+row, then the paper's Table 4.
 Needs the `Reference_Word_Order` / `Variant_Word_Order` columns from
 `variants.label_word_orders`.
 
@@ -1418,6 +1419,7 @@ Returns a list with one dict per construction, in this fixed order:
 
 | `key` | `label` | Subset |
 |---|---|---|
+| `SOV` | Canonical (Ref SOV vs any variant) | reference `SOV`, **any** variant |
 | `OSV` | Object-fronted (Ref OSV vs Var SOV) | reference `DOSV` or `IOSV`, variant `SOV` |
 | `DOSV` | Direct-object-fronted (Ref DOSV vs Var SDOV) | reference `DOSV`, variant `SOV` |
 | `IOSV` | Indirect-object-fronted (Ref IOSV vs Var SIOV) | reference `IOSV`, variant `SOV` |
@@ -1427,11 +1429,16 @@ full `evaluate_pairs` result — `predictors`, `combined`, …),
 `"insufficient_pairs"` (fewer than `min_pairs` rows) or `"not_evaluable"`
 (with `detail`; too few usable rows or a single `ML_Label` class). Raises
 `ValueError` if the label columns are missing. The subset masks are exposed as
-`construction_mask(pairs_df, reference_labels)` and the table as
-`CONSTRUCTIONS`.
+`construction_mask(pairs_df, reference_labels, variant_labels={"SOV"})`
+(`variant_labels=None` = any variant) and the table as `CONSTRUCTIONS`
+(`(key, label, reference_labels, variant_labels)` tuples).
 
-Every subset pairs a **non-canonical reference with a canonical variant**, so
-`DOSV` and `IOSV` are disjoint and `OSV` is exactly their union. This is
+The `SOV` row is our addition, not a paper row: every pair whose reference is
+canonical, whatever order the variant takes. Every other subset pairs a
+**non-canonical reference with a canonical variant**, so `DOSV` and `IOSV` are
+disjoint and `OSV` is exactly their union. `SOV` + `OSV` is therefore not the
+whole table — the non-`SOV` variants of object-fronted references fall in
+neither. This is
 stricter than the research reproduction's OSV row (which keeps every variant of
 an object-fronted reference), and the paper's own pair counts cannot be
 reconstructed from its text — treat comparisons with its Table 4 (trigram:
@@ -1452,7 +1459,9 @@ note instead of numbers — the threshold lives in `webapp/pipeline.py`
 
 Below the overall table the card repeats the measurement **per construction**
 (`evaluation.json` → `constructions`, from `evaluate_by_construction` under the
-same 200-pair policy): one heading and table each for OSV, DOSV and IOSV
-references against their SOV variants, or a "not enough data" note when a
-construction has too few pairs — expect that on small uploads, since only
-~10–15% of references are object-fronted.
+same 200-pair policy): one heading and table each for SOV references against
+all their variants, then OSV, DOSV and IOSV references against their SOV
+variants, or a "not enough data" note when a construction has too few pairs —
+expect that for the object-fronted rows on small uploads, since only ~10–15% of
+references are object-fronted (the SOV row, ~85% of references, almost always
+qualifies).

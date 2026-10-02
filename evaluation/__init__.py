@@ -10,8 +10,8 @@ regression; chance = 50%).  See ``evaluation/ranking.py`` for the method.
     from evaluation import evaluate_pairs, evaluate_by_construction
 
 ``evaluate_by_construction`` repeats the measurement per word-order
-construction (OSV / DOSV / IOSV references against canonical variants — the
-paper's Table 4), using the ``Reference_Word_Order`` / ``Variant_Word_Order``
+construction (SOV references against any variant, then OSV / DOSV / IOSV
+references against canonical variants — the paper's Table 4), using the ``Reference_Word_Order`` / ``Variant_Word_Order``
 columns from ``variants.label_word_orders``.
 """
 

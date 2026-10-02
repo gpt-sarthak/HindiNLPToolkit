@@ -47,9 +47,9 @@ def _evaluation_payload(pairs_df) -> dict:
     }
     result = evaluate_pairs(pairs_df, deltas=delta_cols, labels=labels)
     payload = {"status": "ok", "min_pairs": MIN_EVAL_PAIRS, **result}
-    # Paper Table 4: the same measurement per word-order construction (OSV /
-    # DOSV / IOSV references vs canonical variants), each under the same
-    # 200-pair policy.
+    # The same measurement per word-order construction (SOV references vs any
+    # variant, then paper Table 4: OSV / DOSV / IOSV references vs canonical
+    # variants), each under the same 200-pair policy.
     if all(c in pairs_df.columns for c in WORD_ORDER_COLUMNS):
         payload["constructions"] = evaluate_by_construction(
             pairs_df, deltas=delta_cols, labels=labels, min_pairs=MIN_EVAL_PAIRS

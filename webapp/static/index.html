@@ -994,8 +994,9 @@ function renderEvaluation(ev) {
 
   body.appendChild(evalTable(ev));
 
-  // Paper Table 4: the same measurement per word-order construction (an
-  // object-fronted reference against its canonical SOV variants).  Older
+  // The same measurement per word-order construction: canonical SOV references
+  // against every variant, then paper Table 4 (an object-fronted reference
+  // against its canonical SOV variants).  Older
   // evaluation.json files have no `constructions` key — then nothing renders.
   for (const c of ev.constructions || []) {
     const h = document.createElement("h3");
