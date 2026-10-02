@@ -27,7 +27,7 @@ Confidence intervals around the accuracies are currently **suppressed** — see
 
     result = evaluate_pairs(pairs_df)          # every Delta_* column
     result = evaluate_pairs(pairs_df, deltas=["Delta_DL", "Delta_Trigram"])
-    per_construction = evaluate_by_construction(pairs_df)   # paper Table 4
+    per_construction = evaluate_by_construction(pairs_df)   # SOV + paper Table 4
 """
 
 from __future__ import annotations
@@ -246,26 +246,35 @@ def evaluate_pairs(
 # Per-construction evaluation (paper Table 4)
 # ---------------------------------------------------------------------------
 
-#: The three constructions of Ranjan & van Schijndel (2024), Table 4, as
-#: ``(key, label, reference labels)``.  OSV is the union of the other two.
+_CANONICAL = frozenset({"SOV"})
+
+#: The evaluated constructions, as ``(key, label, reference labels, variant
+#: labels)`` — ``None`` variant labels means any variant.  OSV / DOSV / IOSV
+#: are Ranjan & van Schijndel (2024), Table 4 (OSV is the union of the other
+#: two); SOV — a canonical reference against every variant — is our addition,
+#: not a paper row.
 CONSTRUCTIONS = [
-    ("OSV", "Object-fronted (Ref OSV vs Var SOV)", frozenset({"DOSV", "IOSV"})),
-    ("DOSV", "Direct-object-fronted (Ref DOSV vs Var SDOV)", frozenset({"DOSV"})),
-    ("IOSV", "Indirect-object-fronted (Ref IOSV vs Var SIOV)", frozenset({"IOSV"})),
+    ("SOV", "Canonical (Ref SOV vs any variant)", _CANONICAL, None),
+    ("OSV", "Object-fronted (Ref OSV vs Var SOV)", frozenset({"DOSV", "IOSV"}), _CANONICAL),
+    ("DOSV", "Direct-object-fronted (Ref DOSV vs Var SDOV)", frozenset({"DOSV"}), _CANONICAL),
+    ("IOSV", "Indirect-object-fronted (Ref IOSV vs Var SIOV)", frozenset({"IOSV"}), _CANONICAL),
 ]
 
 _WORD_ORDER_COLUMNS = ("Reference_Word_Order", "Variant_Word_Order")
 
 
-def construction_mask(pairs_df: pd.DataFrame, reference_labels) -> pd.Series:
+def construction_mask(
+    pairs_df: pd.DataFrame, reference_labels, variant_labels=_CANONICAL
+) -> pd.Series:
     """Boolean mask of the pairs that belong to one construction: the reference
-    carries one of *reference_labels* **and** the variant is canonical
-    (``SOV``) — a non-canonical original against its canonical counterpart,
-    which is what the paper's column headings describe."""
-    return (
-        pairs_df["Reference_Word_Order"].isin(reference_labels)
-        & (pairs_df["Variant_Word_Order"] == "SOV")
-    )
+    carries one of *reference_labels* **and** the variant one of
+    *variant_labels* (default canonical ``SOV`` — a non-canonical original
+    against its canonical counterpart, which is what the paper's column
+    headings describe; ``None`` = any variant)."""
+    mask = pairs_df["Reference_Word_Order"].isin(reference_labels)
+    if variant_labels is not None:
+        mask &= pairs_df["Variant_Word_Order"].isin(variant_labels)
+    return mask
 
 
 def evaluate_by_construction(
@@ -277,13 +286,17 @@ def evaluate_by_construction(
     seed: int = 42,
 ) -> List[dict]:
     """
-    Ranking accuracy per word-order construction — the paper's Table 4 rows.
+    Ranking accuracy per word-order construction — the paper's Table 4 rows,
+    plus a canonical ``SOV`` row.
 
     Needs the ``Reference_Word_Order`` / ``Variant_Word_Order`` columns from
-    ``variants.label_word_orders``.  Each construction's subset is a
-    non-canonical reference (``DOSV`` / ``IOSV`` / either, for ``OSV``) paired
-    with a canonical ``SOV`` variant, so the DOSV and IOSV subsets are disjoint
-    and the OSV subset is exactly their union.  This is stricter than the
+    ``variants.label_word_orders``.  The ``SOV`` subset is every pair whose
+    reference is canonical, whatever the variant's order.  The other subsets
+    are a non-canonical reference (``DOSV`` / ``IOSV`` / either, for ``OSV``)
+    paired with a canonical ``SOV`` variant, so the DOSV and IOSV subsets are
+    disjoint and the OSV subset is exactly their union (SOV + OSV is therefore
+    not the whole table — object-fronted references' non-SOV variants fall in
+    neither).  The OSV rule is stricter than the
     research reproduction's OSV row (which keeps every variant of an
     object-fronted reference); the paper's own pair counts cannot be
     reconstructed from its text, so treat cross-paper comparisons as
@@ -313,8 +326,8 @@ def evaluate_by_construction(
             f"pairs_df lacks {missing} — join variants.label_word_orders() first."
         )
     results = []
-    for key, label, ref_labels in CONSTRUCTIONS:
-        sub = pairs_df[construction_mask(pairs_df, ref_labels)]
+    for key, label, ref_labels, var_labels in CONSTRUCTIONS:
+        sub = pairs_df[construction_mask(pairs_df, ref_labels, var_labels)]
         entry = {"key": key, "label": label, "n_pairs": int(len(sub))}
         if len(sub) < max(min_pairs, 1):
             entry["status"] = "insufficient_pairs"
