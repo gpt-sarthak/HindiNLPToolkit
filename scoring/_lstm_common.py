@@ -13,6 +13,11 @@ loading the 65 MB checkpoint — is deferred to first use so plugin discovery
 Adapted from the Hindi Word Order Explorer
 (``feature_extraction/lstm_features.py``, ``adaptive_features.py``,
 ``models/lstm/model.py``).
+
+The scorers score through the batched engine (``scoring/_lstm_engine.py``)
+with :func:`encode_ids`; :func:`sentence_lstm_surprisal` is the original
+one-sentence-at-a-time implementation, kept as the parity reference the engine
+is tested against.
 """
 
 from __future__ import annotations
@@ -60,6 +65,9 @@ def _build_model_class():
 def _load():
     import torch
 
+    from ._lstm_engine import configure_torch_threads
+
+    configure_torch_threads()
     LSTMLanguageModel = _build_model_class()
     with open(_VOCAB_PATH, "rb") as fh:
         raw_vocab = pickle.load(fh)
@@ -78,8 +86,8 @@ def get_lstm():
     """Lazy, thread-safe singleton: ``(base_model, word2idx, device)``.
 
     The base model is shared and used read-only for plain-LSTM scoring; the
-    adaptive scorer ``deepcopy``-s it before mutating, so the shared instance is
-    never modified.
+    adaptive scorer adapts a working copy of it
+    (``_lstm_engine.AdaptationCopy``), so the shared instance is never modified.
     """
     global _cache
     if _cache is None:
@@ -87,6 +95,15 @@ def get_lstm():
             if _cache is None:
                 _cache = _load()
     return _cache
+
+
+def encode_ids(sentence: str, word2idx) -> list:
+    """Token ids exactly as :func:`sentence_lstm_surprisal` reads them: bare
+    whitespace tokens, no ``<SOS>``/``<EOS>`` framing, unknown words -> ``<UNK>``.
+    Kept identical so the batched scores reproduce the committed ``Delta_LSTM``
+    weight's inputs."""
+    unk = word2idx.get("<UNK>", 0)
+    return [word2idx.get(w, unk) for w in str(sentence).split()]
 
 
 def sentence_lstm_surprisal(sentence: str, model, word2idx, device) -> float:
@@ -113,29 +130,25 @@ def sentence_lstm_surprisal(sentence: str, model, word2idx, device) -> float:
     return total
 
 
-def adapt_one_step(sentence: str, model, word2idx, device, lr: float = 0.01) -> None:
+def adapt_one_step(sentence: str, model, word2idx, device, lr: float = 0.01,
+                   *, deterministic: bool = True) -> None:
     """Run one SGD step (cross-entropy next-word loss) on *sentence* to adapt
     *model* in place (van Schijndel & Linzen 2018).  Skipped for sentences with
-    fewer than two tokens.  Leaves the model in ``eval`` mode for the caller."""
-    import torch
-    import torch.nn as nn
+    fewer than two tokens.  Leaves the model in ``eval`` mode for the caller.
 
-    words = sentence.split()
-    if len(words) < 2:
+    ``deterministic`` (default True) zeroes the LSTM's dropout for the step.
+    Until 2026-10-04 the step ran with dropout p=0.3 live, so the adapted
+    weights — and every ``Delta_Adaptive`` value — depended on the RNG state and
+    changed run to run.  Dropout is a training-time regulariser with no place in
+    a single adaptation step; ``_lstm_wiki50m.adapt_one_step`` measured turning
+    it off at no accuracy cost.  It is zeroed rather than switched off with
+    ``model.eval()`` because cuDNN refuses an LSTM backward pass in eval mode.
+    """
+    from ._lstm_engine import sgd_step
+
+    ids = encode_ids(sentence, word2idx)
+    if len(ids) < 2:
         return
-
-    unk = word2idx.get("<UNK>", 0)
-    indices = [word2idx.get(w, unk) for w in words]
-    inp = torch.tensor(indices[:-1]).unsqueeze(0).to(device)
-    tgt = torch.tensor(indices[1:]).to(device)
-
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
-    loss_fn = nn.CrossEntropyLoss()
-
-    model.train()
-    optimizer.zero_grad()
-    logits, _ = model(inp)
-    loss = loss_fn(logits.view(-1, logits.size(-1)), tgt.view(-1))
-    loss.backward()
-    optimizer.step()
-    model.eval()
+    # Same update as torch.optim.SGD over model.parameters(), with the
+    # embedding written sparsely (only the context's rows) — see sgd_step.
+    sgd_step(model, ids, device, lr, deterministic=deterministic)

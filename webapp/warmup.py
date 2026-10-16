@@ -7,7 +7,8 @@ job after a fresh start is fast (cold container: ~223 s for the first job vs
 
 Runs on a daemon thread started from the FastAPI lifespan hook, so the server
 binds and serves immediately while models load behind it.  Targets are warmed
-cheap-first (Stanza → LSTM → trigram → LSTM-Wiki50M) and each one just calls its own
+cheap-first (Stanza → LSTM → one throwaway adaptation step → trigram →
+LSTM-Wiki50M) and each one just calls its own
 lazy, thread-safe singleton loader — a job that races the warm-up blocks on
 the same lock instead of loading twice.
 
@@ -41,6 +42,21 @@ def _warm_lstm() -> None:
     get_lstm()
 
 
+def _warm_adaptation() -> None:
+    """One throwaway SGD step on a private copy of the LSTM.
+
+    The first backward pass in a process pays a one-time autograd / oneDNN
+    set-up of ~1.8 s (measured 2026-10-04: 1,847 ms, then ~55 ms per step
+    after).  Without this, the first adaptive-LSTM job after a restart absorbs
+    it.  The copy is discarded; the shared model is untouched.
+    """
+    from scoring._lstm_common import adapt_one_step, get_lstm
+    from scoring._lstm_engine import AdaptationCopy
+
+    model, word2idx, device = get_lstm()
+    adapt_one_step("<UNK> <UNK> <UNK>", AdaptationCopy(model).fresh(), word2idx, device)
+
+
 def _warm_trigram() -> None:
     from scoring._katz_trigram import get_lm
 
@@ -59,6 +75,7 @@ def _warm_lstm_wiki50m() -> None:
 _TARGETS = [
     ("stanza", _warm_stanza),
     ("lstm", _warm_lstm),
+    ("adaptation", _warm_adaptation),
     ("trigram", _warm_trigram),
     ("lstm_wiki50m", _warm_lstm_wiki50m),
 ]

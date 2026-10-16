@@ -1116,14 +1116,23 @@ Adaptive LSTM surprisal (van Schijndel & Linzen 2018; Ranjan & van Schijndel
 2024). The base LSTM is updated by **one** SGD step on the *preceding* (context)
 sentence, then used to score the reference and its variants — modelling how
 discourse context shapes a reader's expectations. Adaptation runs **once per
-source sentence**; all of that sentence's variants share the adapted weights;
-the shared base model is never mutated (a per-sentence `deepcopy` is adapted and
-discarded).
+reference sentence** (`helpers.reference_groups`); the reference and all its
+variants are scored together under the adapted weights. The shared base model is
+never mutated: one working copy per `score()` call is reset to the base weights
+in place before each adaptation.
 
 This is a **context-aware** scorer: it reads `context["corpus"]` (a
-`CorpusContext`) to find the preceding sentence by `Sent_ID`. When there is no
-preceding sentence (first in the document, or no corpus context), no adaptation
-runs and the score equals the plain `lstm` surprisal.
+`CorpusContext`) to find the preceding sentence by `Ref_Index`. When there is no
+preceding sentence (first in the document, or no corpus context), no copy and no
+SGD step are made and the score equals the plain `lstm` surprisal.
+
+**Deterministic since 2026-10-04.** The SGD step used to run with dropout
+(p = 0.3) live, so its adapted weights depended on the RNG state and every run
+of the same job gave different `Adaptive_*` values (up to ~0.5 nats per row on
+the bundled fixtures). Dropout is now zeroed for the step, as
+`adaptive_lstm_wiki50m` always did, and `Delta_Adaptive`'s weight was refit.
+`variants.csv` files written before that date are not comparable on
+`Adaptive_*` / `Delta_Adaptive`.
 
 | Column | Description |
 |---|---|
@@ -1197,13 +1206,52 @@ Columns added to `variants.csv`:
 
 Two things worth knowing before choosing it over plain `lstm_wiki50m`:
 
-- **The adaptation is worth about +0.03 points** (92.63% vs 92.60%) while
-  deep-copying a 65 MB model per sentence. It exists for parity with the older
-  pair, not because the adaptation pays for itself.
-- **It is deterministic, and `adaptive_lstm` is not.** The older scorer runs its
-  gradient step with dropout live, so two runs of the same job disagree on
-  *every row* — measured across all 92,299 pairs, by up to 2.11 nats. This one
-  zeroes the dropout probability for the step, which costs nothing measurable.
+- **The adaptation is worth about +0.03 points** (92.63% vs 92.60%) at the cost
+  of one SGD step per sentence. It exists for parity with the older pair, not
+  because the adaptation pays for itself.
+- **It is deterministic.** It zeroes the dropout probability for the gradient
+  step, which costs nothing measurable. (`adaptive_lstm` ran its step with
+  dropout live until 2026-10-04, so two runs of the same job disagreed on *every
+  row* — by up to 2.11 nats across all 92,299 pairs; it now does the same.)
+
+### How the four LSTM scorers compute (`scoring/_lstm_engine.py`)
+
+`lstm`, `adaptive_lstm`, `lstm_wiki50m` and `adaptive_lstm_wiki50m` share one
+batched engine. Each scorer only encodes its sentences (the two model
+generations frame them differently); the engine then:
+
+1. groups the rows by reference (`helpers.reference_groups`) and scores each
+   reference **together with its variants** — the reference is computed once
+   and broadcast to every row of its group;
+2. sorts the group's sentences by token ids, so variants that share a prefix sit
+   together, and runs the LSTM over them in chunks — variants are permutations
+   of the same words, so a chunk needs no padding;
+3. **prefix cache:** gives every distinct token prefix one node and runs the
+   vocabulary projection + `log_softmax` (the dominant cost — a 30k-word output
+   at every position) once per node rather than once per position. Same
+   arithmetic, fewer rows;
+4. writes each result back to its row position — the table is never reordered.
+
+Results equal the original one-sentence-at-a-time loop to float32 rounding
+(≤ 1e-4 nats on sentence totals of ~100–200 nats), with the cache on or off and
+at any batch size. The two plain scorers also pack small groups into one call.
+The adaptive scorers adapt once per group with dropout off, and skip the copy
+and the step entirely when there is no preceding sentence. The adaptation step
+itself (`_lstm_engine.sgd_step`) is plain SGD with a **sparse embedding
+update**: one step only changes the embedding rows of the context sentence's
+words (~20 of 30k), so only those rows are written, and the working copy is
+reset afterwards by restoring just the dense layers plus those rows. Same
+update as `torch.optim.SGD` (weights agree to ~2e-7; scores identical), at
+~34 ms per sentence instead of ~55 ms.
+
+Settings (environment variables, read at run time — tune a bigger box without a
+rebuild):
+
+| Variable | Default | Effect |
+|---|---|---|
+| `HNT_LSTM_BATCH` | `16` | Sentences per LSTM chunk (16 measured fastest on a 4-thread CPU; 128 was slower) |
+| `HNT_LSTM_PREFIX_CACHE` | on | `0` disables the prefix cache (for comparison; results are the same) |
+| `HNT_TORCH_THREADS` | torch default | torch intra-op threads, applied once when an LSTM model loads |
 
 ### Built-in scorer: `berkeley_pcfg`
 
@@ -1345,7 +1393,8 @@ The shipped file carries fitted weights for **all nine** built-in scorers
 (magnitude = each feature's standalone accuracy at ranking the attested order):
 `Delta_AdaptiveWiki50M` 6.067 (92.6%), `Delta_LSTMWiki50M` 6.059 (92.6%),
 `Delta_DL` 0.638 (61.7%), `Delta_Trigram` 4.950 (89.5%), `Delta_LSTM` 1.820
-(77.5%), `Delta_Adaptive` 1.822 (77.4%), `Delta_PCFG` 0.896 (63.4%),
+(77.5%), `Delta_Adaptive` 1.822 (77.45%; refit 2026-10-04 for the
+deterministic adaptation step — was 77.43%), `Delta_PCFG` 0.896 (63.4%),
 `Delta_Surprisal` 0.872 (59.4%), `Delta_IS` 0.306 (53.1%). Provenance is mixed:
 `Delta_DL` from the full-corpus fit on the committed `hi_hdtb-ud-train.conllu`
 (193,474 pairs); the other six from the Ranjan & van Schijndel research

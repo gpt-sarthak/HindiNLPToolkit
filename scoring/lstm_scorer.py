@@ -9,8 +9,11 @@ each word order under a 2-layer LSTM trained on Hindi text
 oriented centrally by ``ML_Label``.
 
 The model machinery is shared with the adaptive scorer; see
-``scoring/_lstm_common.py``.  Loading is deferred to first use so plugin
-discovery stays cheap.
+``scoring/_lstm_common.py``.  Scoring runs through the batched engine
+(``scoring/_lstm_engine.py``): each reference is scored together with its
+variants, once, with shared prefixes computed once — same values as the
+original one-sentence-at-a-time loop to float32 rounding (~1e-5 nats).
+Loading is deferred to first use so plugin discovery stays cheap.
 
 Discovered automatically by the scoring package — appears as the ``lstm``
 checkbox in the UI.
@@ -20,7 +23,8 @@ from __future__ import annotations
 
 from helpers import heartbeat
 
-from ._lstm_common import get_lstm, sentence_lstm_surprisal
+from ._lstm_common import encode_ids, get_lstm
+from ._lstm_engine import score_pairs
 from .base import Scorer
 
 
@@ -49,17 +53,13 @@ class LSTMScorer(Scorer):
             df["LSTM_Variant"] = [float("nan")] * len(df)
             return df
 
-        cache: dict = {}
-
-        def surprisal(text) -> float:
-            heartbeat()          # cancellation checkpoint (no-op outside a job)
-            key = str(text)
-            if key not in cache:
-                cache[key] = sentence_lstm_surprisal(key, model, word2idx, device)
-            return cache[key]
-
-        df["LSTM_Reference"] = [surprisal(s) for s in df["Reference_Sentence"]]
-        df["LSTM_Variant"] = [surprisal(s) for s in df["Variant_Sentence"]]
+        # Heartbeat once per engine chunk (cancellation checkpoint; no-op
+        # outside a job).
+        ref_vals, var_vals = score_pairs(
+            df, model, device, lambda s: encode_ids(s, word2idx),
+            on_chunk=heartbeat)
+        df["LSTM_Reference"] = ref_vals
+        df["LSTM_Variant"] = var_vals
         return df
 
     def deltas(self):

@@ -30,7 +30,8 @@ import pandas as pd
 
 from helpers import heartbeat
 
-from ._lstm_wiki50m import batch_surprisal, get_lstm_wiki50m
+from ._lstm_engine import score_pairs
+from ._lstm_wiki50m import PAD, _ids, get_lstm_wiki50m
 from .base import Scorer
 
 
@@ -63,14 +64,14 @@ class LSTMWiki50MScorer(Scorer):
             df["LSTMWiki50M_Variant"] = [float("nan")] * len(df)
             return df
 
-        # One heartbeat per batch: frequent enough to keep a long run
+        # Each reference is scored with its variants, once, through the shared
+        # engine.  One heartbeat per chunk: frequent enough to keep a long run
         # cancellable, without a per-row call the batching exists to avoid.
-        df["LSTMWiki50M_Reference"] = batch_surprisal(
-            df["Reference_Sentence"].tolist(), model, word2idx, device,
-            on_batch=heartbeat)
-        df["LSTMWiki50M_Variant"] = batch_surprisal(
-            df["Variant_Sentence"].tolist(), model, word2idx, device,
-            on_batch=heartbeat)
+        ref_vals, var_vals = score_pairs(
+            df, model, device, lambda s: _ids(s, word2idx),
+            pad_id=word2idx.get(PAD, 0), on_chunk=heartbeat)
+        df["LSTMWiki50M_Reference"] = ref_vals
+        df["LSTMWiki50M_Variant"] = var_vals
         return df
 
     def deltas(self):

@@ -4,7 +4,7 @@
     "Delta_IS": 0.3058,
     "Delta_Trigram": 4.9497,
     "Delta_LSTM": 1.82,
-    "Delta_Adaptive": 1.822,
+    "Delta_Adaptive": 1.8222,
     "Delta_PCFG": 0.8956,
     "Delta_Surprisal": 0.8721,
     "Delta_LSTMWiki50M": 6.0591,
@@ -37,10 +37,10 @@
         "source": "research features.csv (92,299 HDTB pairs)"
       },
       "Delta_Adaptive": {
-        "coefficient": -1.822,
-        "accuracy": 0.7743,
+        "coefficient": -1.8222,
+        "accuracy": 0.7745,
         "n": 92299,
-        "source": "research features.csv (92,299 HDTB pairs)"
+        "source": "refit 2026-10-04 on the research features.csv (92,299 HDTB pairs) with the now-deterministic adaptive_lstm"
       },
       "Delta_PCFG": {
         "coefficient": -0.8956,
@@ -74,7 +74,8 @@
       "others": "Ranjan & van Schijndel research features.csv (hi_hdtb-ud-train.conllu, SOV+DOSV+IOSV, 92,299 pairs; same models as our scorers)",
       "Delta_Surprisal": "computed on those pairs' surfaces via Taru synproc (batch_surprisal.py, Docker)",
       "Delta_Trigram": "refit 2026-08-29 when the trigram scorer was replaced by the Katz-backoff model. Same 92,299 pairs and same univariate fit that produced the old 1.8816 / 77.09%, so this is a like-for-like upgrade on identical rows: 77.09% -> 89.52%. Almost all of the gain is the scoring function (<s> <s> padding and training-time normalization), not the model — the old pickle scored the new way reaches 82.14% against the new model's 82.16% on the app's 48,864 Paninian pairs. See trigram_compare/REPORT.md.",
-      "Delta_LSTMWiki50M / Delta_AdaptiveWiki50M": "added 2026-08-30 as NEW scorers beside lstm / adaptive_lstm, which keep their 1.820 / 1.822 weights unchanged so existing variants.csv files stay comparable. Fitted on the same 92,299 pairs as the rest. The gain over the older pair is 77.45% -> 92.60%, of which +5.65 is the scoring fix (<SOS>/<EOS> padding plus training-time normalisation) and +9.50 the retrained checkpoint (50.8M tokens vs ~2M; held-out perplexity 79.65 vs 380.71 on the identical split). The checkpoint stopped on a 25-minute training budget rather than convergence, so these are a floor. See D:/audit/lstm/FINDINGS.md."
+      "Delta_LSTMWiki50M / Delta_AdaptiveWiki50M": "added 2026-08-30 as NEW scorers beside lstm / adaptive_lstm, which keep their 1.820 / 1.822 weights unchanged so existing variants.csv files stay comparable. Fitted on the same 92,299 pairs as the rest. The gain over the older pair is 77.45% -> 92.60%, of which +5.65 is the scoring fix (<SOS>/<EOS> padding plus training-time normalisation) and +9.50 the retrained checkpoint (50.8M tokens vs ~2M; held-out perplexity 79.65 vs 380.71 on the identical split). The checkpoint stopped on a 25-minute training budget rather than convergence, so these are a floor. See D:/audit/lstm/FINDINGS.md.",
+      "Delta_Adaptive": "refit 2026-10-04 when adaptive_lstm's SGD step stopped running with dropout live (it made every run differ by up to ~0.5 nats per row). Scored by the toolkit's own scorer on the same 92,299 pairs / 2,828 references, adapting each reference on the audit's verified context sentence (D:/audit/lstm/work/context.json, SHA-checked against features.csv), same univariate fit: 1.822 / 77.43% (published, dropout on) -> 1.8222 / 77.45%. Removing the noise left the weight effectively unchanged."
     }
   }
 }

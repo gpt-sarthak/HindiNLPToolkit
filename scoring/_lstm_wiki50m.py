@@ -71,6 +71,9 @@ def normalize(text: str) -> str:
 def _load():
     import torch
 
+    from ._lstm_engine import configure_torch_threads
+
+    configure_torch_threads()
     LSTMLanguageModel = _build_model_class()
     with open(_VOCAB_PATH, "rb") as fh:
         raw_vocab = pickle.load(fh)
@@ -88,8 +91,9 @@ def get_lstm_wiki50m():
     """Lazy, thread-safe singleton: ``(model, word2idx, device)``.
 
     Deliberately separate from ``_lstm_common.get_lstm()`` so the two
-    checkpoints coexist; the adaptive scorer ``deepcopy``-s this one before
-    mutating, exactly as ``adaptive_lstm`` does with the older model.
+    checkpoints coexist; the adaptive scorer adapts a working copy of this one
+    (``_lstm_engine.AdaptationCopy``), exactly as ``adaptive_lstm`` does with
+    the older model.
     """
     global _cache
     if _cache is None:
@@ -190,8 +194,7 @@ def adapt_one_step(sentence: str, model, word2idx, device, lr: float = 0.01,
     training mode" if an LSTM backward runs under eval.  A CPU-only test does
     not catch that — CPU RNN backward has no such rule.
     """
-    import torch
-    import torch.nn as nn
+    from ._lstm_engine import sgd_step
 
     words = normalize(sentence).split()
     if len(words) < 2:
@@ -199,22 +202,6 @@ def adapt_one_step(sentence: str, model, word2idx, device, lr: float = 0.01,
     unk = word2idx.get(UNK, 0)
     ids = ([word2idx[SOS]] + [word2idx.get(w, unk) for w in words]
            + [word2idx[EOS]])
-
-    inp = torch.tensor(ids[:-1]).unsqueeze(0).to(device)
-    tgt = torch.tensor(ids[1:]).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
-    loss_fn = nn.CrossEntropyLoss()
-
-    saved_dropout = model.lstm.dropout
-    if deterministic:
-        model.lstm.dropout = 0.0
-    model.train()
-    optimizer.zero_grad()
-    logits, _ = model(inp)
-    loss = loss_fn(logits.view(-1, logits.size(-1)), tgt.view(-1))
-    loss.backward()
-    if clip:
-        torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
-    optimizer.step()
-    model.lstm.dropout = saved_dropout
-    model.eval()
+    # Same update as torch.optim.SGD over model.parameters() (and the same
+    # global-norm clip), with the embedding written sparsely — see sgd_step.
+    sgd_step(model, ids, device, lr, deterministic=deterministic, clip=clip)

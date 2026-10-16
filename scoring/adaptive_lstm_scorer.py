@@ -8,15 +8,20 @@ The base LSTM is updated by one gradient step on the *preceding* (context)
 sentence, then used to score the reference and its variants under the adapted
 weights — modelling how discourse context shapes a reader's expectations.
 
-Procedure (per unique reference sentence):
-    1. ``deepcopy`` the base model (so the shared base is never mutated).
-    2. If a preceding sentence exists, run one SGD step on it.
-    3. Score the reference once, then every variant of it, in eval mode.
-    4. Discard the adapted copy.
+Procedure (per reference sentence — ``helpers.reference_groups``):
+    1. If a preceding sentence exists, reset a working copy of the base model
+       to the base weights (one copy per ``score`` call, restored in place —
+       the shared base is never mutated) and run one SGD step on it.
+    2. Score the reference and all its variants together, in eval mode,
+       through the batched engine (``scoring/_lstm_engine.py``).
 
 When no preceding sentence is available (first sentence in a document, or no
-corpus context), no adaptation runs and the score equals the plain LSTM
-surprisal.
+corpus context), no copy and no SGD step are made: the group is scored with the
+base model directly, so the score equals the plain LSTM surprisal.
+
+The SGD step runs with dropout switched off (since 2026-10-04), so the scores
+are deterministic; before that, dropout made every run differ — see
+``_lstm_common.adapt_one_step``.
 
 This is a *context-aware* scorer: it declares a ``context`` parameter on
 ``score`` and reads ``context["corpus"]`` (a :class:`helpers.CorpusContext`) for
@@ -29,13 +34,12 @@ Discovered automatically by the scoring package — appears as the
 
 from __future__ import annotations
 
-import copy
-from collections import defaultdict
 from typing import Optional
 
-from helpers import heartbeat
+from helpers import REF_INDEX_COLUMN, heartbeat, reference_groups
 
-from ._lstm_common import adapt_one_step, get_lstm, sentence_lstm_surprisal
+from ._lstm_common import adapt_one_step, encode_ids, get_lstm
+from ._lstm_engine import AdaptationCopy, score_group
 from .base import Scorer
 
 
@@ -68,42 +72,35 @@ class AdaptiveLSTMScorer(Scorer):
             return df
 
         corpus = (context or {}).get("corpus")
-
-        # Group rows by source sentence so adaptation runs once per reference,
-        # not once per pair.  Positional indices keep us aligned with the df.
-        groups: dict = defaultdict(list)
-        for pos, sid in enumerate(df["Sent_ID"]):
-            groups[sid].append(pos)
+        has_index = REF_INDEX_COLUMN in df.columns
+        encode = lambda text: encode_ids(text, word2idx)  # noqa: E731
+        work = AdaptationCopy(base_model)
 
         ref_vals = [float("nan")] * n
         var_vals = [float("nan")] * n
 
-        ref_series = df["Reference_Sentence"]
-        var_series = df["Variant_Sentence"]
-
-        for sid, positions in groups.items():
+        for key, positions in reference_groups(df):
             heartbeat()      # cancellation checkpoint (no-op outside a job) —
-                             # one deepcopy + SGD step per sentence below
+                             # one SGD step per sentence below
             ctx_text = ""
             if corpus is not None:
                 try:
-                    ctx_text = corpus.previous_text(sid, 1)
+                    ctx_text = corpus.previous_text(
+                        df["Sent_ID"].iat[positions[0]], 1,
+                        ref_index=key if has_index else None)
                 except Exception:
                     ctx_text = ""
 
-            model = copy.deepcopy(base_model)
+            model = base_model
             if ctx_text and ctx_text.strip():
+                model = work.fresh()
                 adapt_one_step(ctx_text, model, word2idx, device)
-            model.eval()
 
-            ref_text = str(ref_series.iloc[positions[0]])
-            ref_s = sentence_lstm_surprisal(ref_text, model, word2idx, device)
-
-            for pos in positions:
+            ref_s, var_s = score_group(df, positions, model, device, encode,
+                                       on_chunk=heartbeat)
+            for pos, v in zip(positions, var_s):
                 ref_vals[pos] = ref_s
-                var_vals[pos] = sentence_lstm_surprisal(
-                    str(var_series.iloc[pos]), model, word2idx, device
-                )
+                var_vals[pos] = v
 
         df["Adaptive_Reference"] = ref_vals
         df["Adaptive_Variant"] = var_vals

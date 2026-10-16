@@ -12,8 +12,8 @@ across sentences.
 Two honest caveats, both measured on 92,299 pairs
 -------------------------------------------------
 * **The adaptation is worth ~+0.03 points** over the plain
-  ``lstm_wiki50m`` (92.63% vs 92.60%), while deep-copying a 63 MB model for
-  every sentence.  It ships for parity with the existing
+  ``lstm_wiki50m`` (92.63% vs 92.60%), at the cost of one SGD step (and an
+  in-place reset of a 63 MB working copy) per sentence.  It ships for parity with the existing
   ``lstm`` / ``adaptive_lstm`` pair and so the two generations can be compared
   like for like — not because the adaptation earns its cost.
 * **Unlike ``adaptive_lstm``, this scorer is deterministic.**  That one runs the
@@ -27,14 +27,12 @@ See ``D:\\audit\\lstm\\FINDINGS.md``.
 
 from __future__ import annotations
 
-import copy
-from collections import defaultdict
-
 import pandas as pd
 
-from helpers import heartbeat
+from helpers import REF_INDEX_COLUMN, heartbeat, reference_groups
 
-from ._lstm_wiki50m import adapt_one_step, batch_surprisal, get_lstm_wiki50m
+from ._lstm_engine import AdaptationCopy, score_group
+from ._lstm_wiki50m import PAD, _ids, adapt_one_step, get_lstm_wiki50m
 from .base import Scorer
 
 _ADAPT_LR = 0.01  # the research default; measured irrelevant across 0.001-0.01
@@ -69,40 +67,43 @@ class AdaptiveLSTMWiki50MScorer(Scorer):
             return df
 
         corpus = (context or {}).get("corpus")
-
-        groups = defaultdict(list)
-        for pos, sid in enumerate(df["Sent_ID"]):
-            groups[sid].append(pos)
+        has_index = REF_INDEX_COLUMN in df.columns
+        encode = lambda text: _ids(text, word2idx)  # noqa: E731
+        pad_id = word2idx.get(PAD, 0)
+        # One reusable working copy, reset to pristine base weights before every
+        # adaptation: the shared singleton is never mutated, so concurrent jobs
+        # cannot interfere with each other.
+        work = AdaptationCopy(base_model)
 
         n = len(df)
         ref_vals = [float("nan")] * n
         var_vals = [float("nan")] * n
 
-        for sid, rows in groups.items():
+        for key, positions in reference_groups(df):
             heartbeat()  # cancellation checkpoint (no-op outside a job)
 
             ctx_text = ""
             if corpus is not None:
                 try:
-                    ctx_text = corpus.previous_text(sid, 1)
+                    ctx_text = corpus.previous_text(
+                        df["Sent_ID"].iat[positions[0]], 1,
+                        ref_index=key if has_index else None)
                 except Exception:
                     ctx_text = ""
 
-            # Pristine weights every sentence: the shared singleton is never
-            # mutated, so concurrent jobs cannot interfere with each other.
-            model = copy.deepcopy(base_model)
+            # No preceding sentence: nothing to adapt to, so score with the
+            # base model itself — no copy, no SGD step.
+            model = base_model
             if ctx_text and ctx_text.strip():
+                model = work.fresh()
                 adapt_one_step(ctx_text, model, word2idx, device, lr=_ADAPT_LR)
-            model.eval()
 
-            # One reference per group: score once and broadcast.
-            ref_score = batch_surprisal(
-                [df["Reference_Sentence"].iat[rows[0]]], model, word2idx,
-                device, batch_size=1)[0]
-            var_scores = batch_surprisal(
-                [df["Variant_Sentence"].iat[i] for i in rows],
-                model, word2idx, device)
-            for i, v in zip(rows, var_scores):
+            # Reference and variants in one engine call; the reference is
+            # scored once and broadcast.
+            ref_score, var_scores = score_group(
+                df, positions, model, device, encode, pad_id=pad_id,
+                on_chunk=heartbeat)
+            for i, v in zip(positions, var_scores):
                 ref_vals[i] = ref_score
                 var_vals[i] = v
 
