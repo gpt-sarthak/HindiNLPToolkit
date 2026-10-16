@@ -9,6 +9,9 @@ venv/
 .claude/
 CLAUDE.md
 
+# Editor workspace settings (machine-specific paths)
+.vscode/
+
 # Local-only: research notebook, tests, sample sentences
 MTP_pipeline.ipynb
 test_all.py

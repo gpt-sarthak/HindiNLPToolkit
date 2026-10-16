@@ -38,6 +38,7 @@ Discovered automatically by the scoring package — appears as the
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, List
@@ -49,6 +50,22 @@ from .base import Scorer
 _PKG_DIR = Path(__file__).resolve().parent
 _JAR = _PKG_DIR.parent / "taru" / "external_resources" / "berkeleyparser" / "berkeleyParser.jar"
 _GRAMMAR = _PKG_DIR / "models" / "hdtb_dsps_grammar"
+
+# Wall-clock limit for the single batched parser call, in seconds.  Raised from
+# 300 on 2026-10-04: a 2,000-sentence upload (~4,800 unique surfaces) took
+# 249-294 s idle and overran 300 s under load, which blanked the PCFG columns.
+# Stop-gap only — the limit still covers the whole batch, and a run that hits
+# it still returns NaN.  Cancel is unaffected (the JVM is registered with the
+# job and killed at once).  Override with HNT_PCFG_TIMEOUT.
+_DEFAULT_TIMEOUT_S = 1800
+
+
+def _timeout_s() -> int:
+    try:
+        value = int(os.environ.get("HNT_PCFG_TIMEOUT", ""))
+        return value if value > 0 else _DEFAULT_TIMEOUT_S
+    except ValueError:
+        return _DEFAULT_TIMEOUT_S
 
 
 def _available() -> bool:
@@ -70,8 +87,14 @@ def _score_pcfg_live(sentences: List[str]) -> Dict[str, float]:
         # a cooperative heartbeat cannot interrupt it — the killer must be able
         # to terminate the process itself.  Outside a job the registration is a
         # no-op and this behaves exactly like the old subprocess.run.
+        # The encoding flags make the JVM read stdin and write stdout as UTF-8,
+        # matching ``encoding="utf-8"`` below.  Without them Java uses the
+        # platform charset — UTF-8 on Linux/Docker, but cp1252 on Windows, where
+        # the Devanagari input arrives mangled (wrong parses, wrong scores) and
+        # the output may not even decode.
         with subprocess.Popen(
-            ["java", "-Xmx4g", "-jar", str(_JAR),
+            ["java", "-Xmx4g", "-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8",
+             "-jar", str(_JAR),
              "-gr", str(_GRAMMAR), "-sentence_likelihood"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -80,11 +103,15 @@ def _score_pcfg_live(sentences: List[str]) -> Dict[str, float]:
             encoding="utf-8",
         ) as proc, register_process(proc):
             try:
-                stdout, _stderr = proc.communicate(input=inp, timeout=300)
+                stdout, _stderr = proc.communicate(input=inp, timeout=_timeout_s())
             except Exception:
                 proc.kill()          # don't leave the JVM behind on a timeout
                 raise
     except Exception:
+        return {}
+    if stdout is None:
+        # communicate() leaves stdout as None when its reader thread failed to
+        # decode the output; treat it like any other parser failure.
         return {}
 
     scores: Dict[str, float] = {}

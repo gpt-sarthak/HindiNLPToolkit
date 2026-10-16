@@ -1277,6 +1277,12 @@ batched JVM call scores all unique surfaces in the table.
 
 Requires **Java** on `PATH` (present in the Docker image). If the jar/grammar is
 missing, Java is unavailable, or a sentence is unparseable, that score is `NaN`.
+All unique sentences are parsed in **one** Java call with a wall-clock limit of
+**1800 s** (`HNT_PCFG_TIMEOUT` overrides it, in seconds; raised from 300 s on
+2026-10-04 — a 2,000-sentence upload took ~250–295 s). If the limit is hit the
+whole column is `NaN`, and a File-mode job with *Evaluate* on then fails, so keep
+uploads modest until the chunked/parallel fix lands. Cancel still stops the
+parser immediately.
 
 | Column | Description |
 |---|---|
