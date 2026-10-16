@@ -27,11 +27,11 @@ produced by the central delta step in ``scoring.apply_scorers`` via
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import pandas as pd
 
-from helpers import rebuild_variant_tree
+from helpers import rebuild_variant_tree, reference_lookup
 from .base import Scorer
 
 _OUTPUT_COLUMNS = ("DL_Reference", "DL_Variant")
@@ -77,28 +77,21 @@ class DependencyLengthScorer(Scorer):
                 df[col] = [0] * len(df)
             return df
 
-        # sent_id -> (sentence TokenList, root_id, constituents)
-        parse_by_id: Dict[str, Tuple[object, int, List[List[dict]]]] = {}
-        for item in passed:
-            sid = item["sentence"].metadata.get("sent_id", "Unknown_ID")
-            parse_by_id.setdefault(sid, (item["sentence"], item["root_id"], item["constituents"]))
-
-        ref_dl: Dict[str, int] = {}   # cache per sentence
+        ref_dl: Dict[int, int] = {}   # once per reference (keyed by item identity)
         ref_col: List[int] = []
         var_col: List[int] = []
 
-        for sent_id, variant_sentence in zip(df["Sent_ID"], df["Variant_Sentence"]):
-            parse = parse_by_id.get(sent_id)
-            if parse is None:
+        for item, variant_sentence in zip(reference_lookup(df, passed), df["Variant_Sentence"]):
+            if item is None:
                 ref_col.append(0)
                 var_col.append(0)
                 continue
 
-            sentence, root_id, constituents = parse
+            sentence, root_id, constituents = item["sentence"], item["root_id"], item["constituents"]
 
-            if sent_id not in ref_dl:
-                ref_dl[sent_id] = _calculate_sentence_total_dl(sentence)
-            ref_col.append(ref_dl[sent_id])
+            if id(item) not in ref_dl:
+                ref_dl[id(item)] = _calculate_sentence_total_dl(sentence)
+            ref_col.append(ref_dl[id(item)])
             var_col.append(self._variant_dl(sentence, root_id, constituents, str(variant_sentence)))
 
         df["DL_Reference"] = ref_col

@@ -19,6 +19,9 @@ re-implementing them inside each scorer:
   order ``SOV`` / ``DOSV`` / ``IOSV`` (Ranjan & van Schijndel 2024; ``OSV`` =
   ``DOSV`` or ``IOSV``) from its deprel sequence — the same rule for a
   reference parse and a rebuilt variant.
+- **Reference grouping** (``grouping``): stamp each sentence's position in the
+  submitted file (``Ref_Index``), group a pairs table's rows by reference, and
+  map rows back to their parse — keyed on that position, never on ``Sent_ID``.
 
 Depends only on ``conllu`` and the standard library; safe to import from any
 logic package.
@@ -30,6 +33,7 @@ logic package.
         recover_permutation, reindex_tokens, block_start_index,
         heartbeat, register_process, CancelToken, JobCancelled,
         classify_word_order, constituent_deprel, is_osv,
+        reference_groups, reference_lookup, stamp_ref_index,
     )
 """
 
@@ -49,6 +53,16 @@ from .corpus_context import (
     build_corpus_context,
     get_previous_sentences,
     get_previous_text,
+)
+from .grouping import (
+    REF_INDEX_COLUMN,
+    REF_INDEX_KEY,
+    VARIANT_NO_COLUMN,
+    passed_ref_indices,
+    ref_index_of,
+    reference_groups,
+    reference_lookup,
+    stamp_ref_index,
 )
 from .variant_tree import (
     VariantTree,
@@ -93,4 +107,12 @@ __all__ = [
     "INDIRECT_OBJECT_DEPRELS",
     "WORD_ORDER_LABELS",
     "OSV_LABELS",
+    "REF_INDEX_KEY",
+    "REF_INDEX_COLUMN",
+    "VARIANT_NO_COLUMN",
+    "stamp_ref_index",
+    "ref_index_of",
+    "passed_ref_indices",
+    "reference_lookup",
+    "reference_groups",
 ]

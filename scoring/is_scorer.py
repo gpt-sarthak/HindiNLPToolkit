@@ -50,7 +50,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
-from helpers import CorpusContext, recover_permutation
+from helpers import REF_INDEX_COLUMN, CorpusContext, recover_permutation, reference_lookup
 from .base import Scorer
 
 
@@ -228,38 +228,38 @@ class InformationStatusScorer(Scorer):
                 df[col] = [0] * len(df)
             return df
 
-        # sent_id -> (root_id, constituents)
-        parse_by_id: Dict[str, Tuple[int, List[List[dict]]]] = {}
-        for item in passed:
-            sid = item["sentence"].metadata.get("sent_id", "Unknown_ID")
-            parse_by_id.setdefault(sid, (item["root_id"], item["constituents"]))
+        items = reference_lookup(df, passed)
+        ref_indices = (list(df[REF_INDEX_COLUMN]) if REF_INDEX_COLUMN in df.columns
+                       else [None] * len(df))
 
-        # Analyse each sentence once (order-independent givenness facts).
-        analysis: Dict[str, Optional[_SentenceIS]] = {}
+        # Analyse each reference once (order-independent givenness facts),
+        # keyed by the parse item's identity.
+        analysis: Dict[int, Optional[_SentenceIS]] = {}
 
         is_ref_col: List[int] = []
         is_var_col: List[int] = []
 
-        for sent_id, variant_sentence in zip(df["Sent_ID"], df["Variant_Sentence"]):
-            if sent_id not in analysis:
-                parse = parse_by_id.get(sent_id)
-                if parse is None:
-                    analysis[sent_id] = None
-                else:
-                    root_id, constituents = parse
-                    ctx_lemmas = {
-                        tok["lemma"]
-                        for sent in corpus.previous(sent_id, n=1)
-                        for tok in sent
-                        if tok["upos"] in preset.content_pos
-                        and tok["lemma"]
-                        and tok["lemma"] != "_"
-                    }
-                    analysis[sent_id] = _analyse_sentence(
-                        root_id, constituents, ctx_lemmas, preset
-                    )
+        for item, sent_id, ref_index, variant_sentence in zip(
+            items, df["Sent_ID"], ref_indices, df["Variant_Sentence"]
+        ):
+            if item is None:
+                is_ref_col.append(0)
+                is_var_col.append(0)
+                continue
+            if id(item) not in analysis:
+                ctx_lemmas = {
+                    tok["lemma"]
+                    for sent in corpus.previous(sent_id, n=1, ref_index=ref_index)
+                    for tok in sent
+                    if tok["upos"] in preset.content_pos
+                    and tok["lemma"]
+                    and tok["lemma"] != "_"
+                }
+                analysis[id(item)] = _analyse_sentence(
+                    item["root_id"], item["constituents"], ctx_lemmas, preset
+                )
 
-            info = analysis[sent_id]
+            info = analysis[id(item)]
             if info is None:
                 is_ref_col.append(0)
                 is_var_col.append(0)

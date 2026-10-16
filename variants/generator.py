@@ -26,10 +26,13 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
+from helpers.grouping import passed_ref_indices
 
 _COLUMNS = [
     "Sent_ID",
     "Variant_ID",
+    "Ref_Index",
+    "Variant_No",
     "ML_Label",
     "Reference_Sentence",
     "Variant_Sentence",
@@ -134,8 +137,14 @@ def generate_variants(
     Returns
     -------
     pairs_df : pandas.DataFrame
-        Columns: Sent_ID | Variant_ID | ML_Label | Reference_Sentence |
-        Variant_Sentence.  ``Variant_ID`` is ``{Sent_ID}_v{n}``.
+        Columns: Sent_ID | Variant_ID | Ref_Index | Variant_No | ML_Label |
+        Reference_Sentence | Variant_Sentence.  ``Variant_ID`` is
+        ``{Sent_ID}_v{n}``.  ``Ref_Index`` is the reference's 1-based position
+        in the submitted file (stamped by ``load_input``; 1..n over
+        *passed_list* for unstamped sentences) and ``Variant_No`` is ``n`` as an
+        integer, so sorting by ``(Ref_Index, Variant_No)`` reproduces the
+        submitted order — ``Sent_ID`` / ``Variant_ID`` are text and do not sort
+        numerically (``s10`` < ``s2``).
 
     Notes
     -----
@@ -166,7 +175,7 @@ def generate_variants(
     # full dataset rather than relying on random chance.
     toggle_label = True
 
-    for item in passed_list:
+    for item, ref_index in zip(passed_list, passed_ref_indices(passed_list)):
         original_sent = item["sentence"]
         real_consts = item["constituents"]
         root_id = item["root_id"]
@@ -226,6 +235,8 @@ def generate_variants(
             pairs_rows.append({
                 "Sent_ID": sent_id,
                 "Variant_ID": f"{sent_id}_v{var_idx}",
+                "Ref_Index": ref_index,
+                "Variant_No": var_idx,
                 "ML_Label": label,
                 "Reference_Sentence": ref_text,
                 "Variant_Sentence": var_text,

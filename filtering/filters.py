@@ -37,7 +37,7 @@ import numpy as np
 import pandas as pd
 from conllu import TokenList
 
-from helpers import WORD_ORDER_LABELS, classify_word_order
+from helpers import WORD_ORDER_LABELS, classify_word_order, passed_ref_indices, ref_index_of
 
 # Default POS tags accepted on the sentence root for preverbal analysis.
 _DEFAULT_ALLOWED_POS: Tuple[str, ...] = ("VERB", "AUX", "VM", "VAUX")
@@ -51,7 +51,7 @@ _DEFAULT_ALLOWED_POS: Tuple[str, ...] = ("VERB", "AUX", "VM", "VAUX")
 _DEFAULT_SUBJECT_DEPRELS: Tuple[str, ...] = ("nsubj", "nsubj:pass", "k1")
 _DEFAULT_OBJECT_DEPRELS: Tuple[str, ...] = ("obj", "iobj", "k2", "k4")
 
-_REJECTED_COLS = ["Sent_ID", "Sentence", "Reason"]
+_REJECTED_COLS = ["Sent_ID", "Ref_Index", "Sentence", "Reason"]
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +65,14 @@ def _sent_meta(sent: TokenList) -> Tuple[str, str]:
         "text", " ".join(tok["form"] for tok in sent if isinstance(tok["id"], int))
     )
     return sent_id, text
+
+
+def _rejected_row(sent: TokenList, reason: str) -> Dict:
+    """One rejected-sentences row.  ``Ref_Index`` is the sentence's position in
+    the submitted file (stamped by ``load_input``; blank when unstamped)."""
+    sent_id, text = _sent_meta(sent)
+    return {"Sent_ID": sent_id, "Ref_Index": ref_index_of(sent),
+            "Sentence": text, "Reason": reason}
 
 
 def _make_rejected_df(rows: List[Dict]) -> pd.DataFrame:
@@ -202,7 +210,7 @@ def filter_questions(
     rejected: List[Dict] = []
 
     for sent in sentences:
-        sent_id, text = _sent_meta(sent)
+        _sent_id, text = _sent_meta(sent)
         is_question = check_punct and "?" in text
 
         for tok in sent:
@@ -214,7 +222,7 @@ def filter_questions(
                     is_question = True
 
         if is_question:
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Interrogative"})
+            rejected.append(_rejected_row(sent, "Interrogative"))
         else:
             passed.append(sent)
 
@@ -256,7 +264,6 @@ def filter_negatives(
     rejected: List[Dict] = []
 
     for sent in sentences:
-        sent_id, text = _sent_meta(sent)
         is_negative = False
 
         for tok in sent:
@@ -268,7 +275,7 @@ def filter_negatives(
                     is_negative = True
 
         if is_negative:
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Negation"})
+            rejected.append(_rejected_row(sent, "Negation"))
         else:
             passed.append(sent)
 
@@ -305,9 +312,8 @@ def filter_ghost_ids(
     rejected: List[Dict] = []
 
     for sent in sentences:
-        sent_id, text = _sent_meta(sent)
         if any(not isinstance(tok["id"], int) for tok in sent):
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Empty nodes"})
+            rejected.append(_rejected_row(sent, "Empty nodes"))
         else:
             passed.append(sent)
 
@@ -344,9 +350,8 @@ def filter_non_projective(
     rejected: List[Dict] = []
 
     for sent in sentences:
-        sent_id, text = _sent_meta(sent)
         if not _is_projective(sent):
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": "Non-projective dependencies"})
+            rejected.append(_rejected_row(sent, "Non-projective dependencies"))
         else:
             passed.append(sent)
 
@@ -397,10 +402,9 @@ def filter_bad_root(
     rejected: List[Dict] = []
 
     for sent in sentences:
-        sent_id, text = _sent_meta(sent)
         consts, root_id, error = _get_preverbal_constituents(sent, allowed_pos=pos_tuple)
         if error:
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": error})
+            rejected.append(_rejected_row(sent, error))
         else:
             passed.append({"sentence": sent, "root_id": root_id, "constituents": consts})
 
@@ -479,15 +483,13 @@ def filter_punct_constituents(
             sent = item["sentence"]
             root_id = item["root_id"]
             consts = item["constituents"]
-            sent_id, text = _sent_meta(sent)
             error = None
         else:
             sent = item
-            sent_id, text = _sent_meta(sent)
             consts, root_id, error = _get_preverbal_constituents(sent, allowed_pos=pos_tuple)
 
         if error:
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": error})
+            rejected.append(_rejected_row(sent, error))
             continue
 
         has_punct_constituent = any(
@@ -498,11 +500,7 @@ def filter_punct_constituents(
         )
 
         if has_punct_constituent:
-            rejected.append({
-                "Sent_ID": sent_id,
-                "Sentence": text,
-                "Reason": "Punctuation-attached constituent",
-            })
+            rejected.append(_rejected_row(sent, "Punctuation-attached constituent"))
         else:
             passed.append({"sentence": sent, "root_id": root_id, "constituents": consts})
 
@@ -608,18 +606,16 @@ def filter_min_phrases(
             sent = item["sentence"]
             root_id = item["root_id"]
             consts = item["constituents"]
-            sent_id, text = _sent_meta(sent)
             error = None
         else:
             sent = item
-            sent_id, text = _sent_meta(sent)
             consts, root_id, error = _get_preverbal_constituents(sent, allowed_pos=pos_tuple)
 
         if error:
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": error})
+            rejected.append(_rejected_row(sent, error))
             continue
         if len(consts) < min_phrases:
-            rejected.append({"Sent_ID": sent_id, "Sentence": text, "Reason": reason_template})
+            rejected.append(_rejected_row(sent, reason_template))
             continue
 
         if require_core_args:
@@ -632,11 +628,7 @@ def filter_min_phrases(
             if not (deprels & obj_set):
                 missing.append("object")
             if missing:
-                rejected.append({
-                    "Sent_ID": sent_id,
-                    "Sentence": text,
-                    "Reason": f"Missing preverbal {' and '.join(missing)}",
-                })
+                rejected.append(_rejected_row(sent, f"Missing preverbal {' and '.join(missing)}"))
                 continue
 
         passed.append({"sentence": sent, "root_id": root_id, "constituents": consts})
@@ -696,9 +688,9 @@ def filter_sentences(
     passed_list  : List[Dict]  — dicts with ``sentence``, ``root_id``,
                    ``constituents``.  Direct input to ``generate_variants()``.
     rejected_df  : DataFrame   — all rejected sentences across all seven filters,
-                   columns: Sent_ID | Sentence | Reason.
+                   columns: Sent_ID | Ref_Index | Sentence | Reason.
     passed_df    : DataFrame   — rich feature table for the passed sentences,
-                   columns: Sent_ID | Sentence | Root_ID | Constituent_Count |
+                   columns: Sent_ID | Ref_Index | Sentence | Root_ID | Constituent_Count |
                    Character_Length | Sentence_Length | Constituent_Lengths |
                    Deprel_Tags | Grammatical_Pairs.
 
@@ -743,7 +735,7 @@ def filter_sentences(
 
     # ── Build passed_df — rich feature table for downstream analysis ──────────
     passed_rows: List[Dict] = []
-    for item in passed_list:
+    for item, ref_index in zip(passed_list, passed_ref_indices(passed_list)):
         sent_obj = item["sentence"]
         root_id = item["root_id"]
         consts = item["constituents"]
@@ -753,6 +745,7 @@ def filter_sentences(
         grammatical_pairs = [(deprels[i], deprels[i + 1]) for i in range(len(deprels) - 1)]
         passed_rows.append({
             "Sent_ID": sent_id,
+            "Ref_Index": ref_index,
             "Sentence": sent_text,
             "Root_ID": root_id,
             "Constituent_Count": len(consts),
@@ -764,7 +757,7 @@ def filter_sentences(
         })
 
     _cols = [
-        "Sent_ID", "Sentence", "Root_ID", "Constituent_Count",
+        "Sent_ID", "Ref_Index", "Sentence", "Root_ID", "Constituent_Count",
         "Character_Length", "Sentence_Length",
         "Constituent_Lengths", "Deprel_Tags", "Grammatical_Pairs",
     ]

@@ -92,8 +92,10 @@ columns are **always present**:
 
 | Column | Meaning |
 | --- | --- |
-| `Sent_ID` | id of the source sentence (use it to look up corpus context) |
+| `Sent_ID` | id of the source sentence (text; may repeat in an uploaded `.conllu`) |
 | `Variant_ID` | `{Sent_ID}_v{n}` |
+| `Ref_Index` | the reference's position in the submitted file — **the key for anything per reference sentence** (unique, integer) |
+| `Variant_No` | `n`, 1..n within the reference; `(Ref_Index, Variant_No)` sorts back to the submitted order |
 | `ML_Label` | flip signal: `1` = reference shown first, `0` = variant shown first |
 | `Reference_Sentence` | surface text of the original order |
 | `Variant_Sentence` | surface text of the reordered variant |
@@ -102,7 +104,13 @@ columns are **always present**:
 Rules — **do not break these:**
 
 - **Add columns only. Never drop or reorder rows** — downstream code relies on
-  row alignment.
+  row alignment. You may *compute* in any order (e.g. sorted, batched per
+  reference) as long as you write each result back to its row position.
+- **Work per reference with `helpers.reference_groups(pairs_df)`** — it yields
+  `(Ref_Index, row_positions)` for each reference sentence and its variants, so
+  the reference can be scored once and broadcast. Look up a row's parse with
+  `helpers.reference_lookup(pairs_df, context["passed"])`. Don't group or look
+  up by `Sent_ID`: two different references can share one.
 - **Store true-role values:** `*_Reference` for the reference order,
   `*_Variant` for the variant order.
 - **Don't compute the difference yourself.** Declare it in `deltas()`. After all
@@ -146,18 +154,25 @@ the **preceding sentence(s)** — add an optional `context` parameter to `score`
 scorers are unaffected.
 
 ```python
+from helpers import reference_groups
+
 def score(self, pairs_df, context=None):
     df = pairs_df.copy()
     corpus = (context or {}).get("corpus")   # helpers.CorpusContext | None
 
-    ref_scores, var_scores = [], []
-    for sent_id, ref_text, var_text in zip(
-        df["Sent_ID"], df["Reference_Sentence"], df["Variant_Sentence"]
-    ):
+    ref_scores = [None] * len(df)
+    var_scores = [None] * len(df)
+    # One group per reference sentence: its row positions in df.
+    for ref_index, rows in reference_groups(df):
+        first = rows[0]
+        sent_id = df["Sent_ID"].iat[first]
         # The 1-2 sentences before this one, oldest first ("" if none/no corpus).
-        prev = corpus.previous_text(sent_id, n=2) if corpus else ""
-        ref_scores.append(self.run_model(ref_text, prev))   # your model
-        var_scores.append(self.run_model(var_text, prev))
+        prev = (corpus.previous_text(sent_id, n=2, ref_index=ref_index)
+                if corpus else "")
+        ref = self.run_model(df["Reference_Sentence"].iat[first], prev)  # once
+        for r in rows:
+            ref_scores[r] = ref
+            var_scores[r] = self.run_model(df["Variant_Sentence"].iat[r], prev)
     df["MyModel_Reference"] = ref_scores
     df["MyModel_Variant"]   = var_scores
     return df
@@ -166,9 +181,11 @@ def score(self, pairs_df, context=None):
 The `context` dict holds:
 
 - `context["corpus"]` — a `helpers.CorpusContext`. Use
-  `corpus.previous_text(sent_id, n=2)` for the previous **text**, or
-  `corpus.previous(sent_id, n=2)` for the previous sentences as parsed tokens.
-  `n=1` for a single previous sentence; returns `""`/`[]` at the corpus start.
+  `corpus.previous_text(sent_id, n=2, ref_index=...)` for the previous **text**,
+  or `corpus.previous(sent_id, n=2, ref_index=...)` for the previous sentences as
+  parsed tokens. Pass the row's `Ref_Index` as `ref_index` so a repeated
+  `Sent_ID` still finds the right predecessor. `n=1` for a single previous
+  sentence; returns `""`/`[]` at the corpus start.
 - `context["passed"]` — the filter output (parse / constituents).
 - `context["scheme"]` — `"ud"` or `"paninian"`.
 

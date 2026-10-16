@@ -16,7 +16,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from helpers import JobCancelled, heartbeat
+from helpers import (
+    REF_INDEX_COLUMN,
+    VARIANT_NO_COLUMN,
+    JobCancelled,
+    heartbeat,
+    stamp_ref_index,
+)
 
 from webapp import jobs
 
@@ -55,6 +61,18 @@ def _evaluation_payload(pairs_df) -> dict:
             pairs_df, deltas=delta_cols, labels=labels, min_pairs=MIN_EVAL_PAIRS
         )
     return payload
+
+
+def _in_submitted_order(pairs_df):
+    """*pairs_df* sorted by ``(Ref_Index, Variant_No)`` — the submitted file's
+    order.  ``generate_variants`` already emits rows that way and scorers never
+    reorder them, so this is a safety net (and the merge step for any future
+    partitioned run), not a reshuffle.  Stable, so it is a no-op when nothing
+    moved."""
+    keys = [REF_INDEX_COLUMN, VARIANT_NO_COLUMN]
+    if pairs_df.empty or not all(k in pairs_df.columns for k in keys):
+        return pairs_df
+    return pairs_df.sort_values(keys, kind="stable")
 
 
 def _recommendation_payload(pairs_df, scorer_names) -> dict:
@@ -125,6 +143,9 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
         ctx_sentences = load_input(context_text)
         for i, sent in enumerate(ctx_sentences):
             sent.metadata["sent_id"] = f"context_s{i + 1}"
+        # The target(s) keep positions 1..n; the context sits just before them
+        # at <= 0, so every position in the scoring corpus stays unique.
+        stamp_ref_index(ctx_sentences, start=1 - len(ctx_sentences))
         corpus_sentences = list(ctx_sentences) + list(sentences)
 
     # ── Stage 2: filter ───────────────────────────────────────────────────
@@ -202,9 +223,11 @@ def run_job(job: "jobs.Job", input_path: Path, options: dict) -> None:
             # then unwind.  `pairs_df` is only rebound on a *successful* call,
             # so this writes either the plain surface pairs or a fully scored
             # table — never a half-filled one.
-            pairs_df.to_csv(out / "variants.csv", index=False, encoding="utf-8")
+            _in_submitted_order(pairs_df).to_csv(
+                out / "variants.csv", index=False, encoding="utf-8")
             job.artifacts.append("variants.csv")
             raise
+    pairs_df = _in_submitted_order(pairs_df)
     pairs_df.to_csv(out / "variants.csv", index=False, encoding="utf-8")
     job.artifacts.append("variants.csv")
     heartbeat()

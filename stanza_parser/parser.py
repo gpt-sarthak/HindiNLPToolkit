@@ -22,6 +22,8 @@ from typing import Any, Dict, List
 
 from conllu import parse, TokenList
 
+from helpers.grouping import stamp_ref_index
+
 # Module-level cache — pipeline is loaded once per Python session.  The lock
 # stops concurrent callers (webapp job workers, the startup warm-up thread)
 # from each building their own ~1 GB pipeline.
@@ -91,6 +93,9 @@ def load_input(source: str) -> List[TokenList]:
     Returns
     -------
     List[TokenList]
+        Every sentence carries ``metadata["hnt_index"]`` — its 1-based position
+        in *source*, stamped here, before any filtering.  It becomes the pairs
+        table's ``Ref_Index`` (see ``helpers.grouping``).
 
     Raises
     ------
@@ -105,6 +110,12 @@ def load_input(source: str) -> List[TokenList]:
     >>> sents = load_input("sentences.txt")
     >>> sents = load_input("राम घर जाता है।")
     """
+    sentences = _load(source)
+    stamp_ref_index(sentences)
+    return sentences
+
+
+def _load(source: str) -> List[TokenList]:
     if not source or not source.strip():
         raise ValueError("source must be a non-empty file path or sentence string.")
 

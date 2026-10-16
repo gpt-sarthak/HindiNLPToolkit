@@ -63,7 +63,7 @@ def _cv_accuracy(
     if groups is not None:
         if len(np.unique(groups)) < folds:
             raise ValueError(
-                f"group_by_sentence needs at least {folds} distinct Sent_IDs "
+                f"group_by_sentence needs at least {folds} distinct reference sentences "
                 f"(got {len(np.unique(groups))})."
             )
         split_iter = GroupKFold(n_splits=folds).split(X, y, groups)
@@ -151,7 +151,8 @@ def evaluate_pairs(
     seed     : shuffle seed for the fold split (default 42, as in the paper).
     labels   : optional ``{delta_column: display_name}`` (e.g. scorer names)
                echoed into the result for presentation.
-    group_by_sentence : when True, split folds by ``Sent_ID`` (GroupKFold) so
+    group_by_sentence : when True, split folds by reference (``Ref_Index``,
+               or ``Sent_ID`` on an older table; GroupKFold) so
                no sentence contributes pairs to both sides of a fold.  Default
                False = plain shuffled KFold, matching the original study.
 
@@ -183,17 +184,20 @@ def evaluate_pairs(
             "No Delta_* columns to evaluate — apply at least one scorer that "
             "declares deltas()."
         )
-    if group_by_sentence and "Sent_ID" not in pairs_df.columns:
-        raise ValueError("group_by_sentence=True needs a Sent_ID column.")
+    # Group folds by reference: Ref_Index when present (unique per reference),
+    # else Sent_ID for tables built before that column existed.
+    group_col = "Ref_Index" if "Ref_Index" in pairs_df.columns else "Sent_ID"
+    if group_by_sentence and group_col not in pairs_df.columns:
+        raise ValueError("group_by_sentence=True needs a Ref_Index or Sent_ID column.")
     labels = labels or {}
 
     def _evaluate_subset(cols: List[str], what: str) -> dict:
-        keep = cols + ["ML_Label"] + (["Sent_ID"] if group_by_sentence else [])
+        keep = cols + ["ML_Label"] + ([group_col] if group_by_sentence else [])
         sub = pairs_df[keep].dropna(subset=cols)
         _check_subset(sub, what, folds)
         X = sub[cols].to_numpy(dtype=float)
         y = sub["ML_Label"].to_numpy(dtype=int)
-        groups = sub["Sent_ID"].to_numpy() if group_by_sentence else None
+        groups = sub[group_col].to_numpy() if group_by_sentence else None
         accuracy = _cv_accuracy(X, y, folds, seed, groups)
         coefs = _full_fit_coefficients(X, y)
         res = {

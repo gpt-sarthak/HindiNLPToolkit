@@ -371,8 +371,10 @@
                <em>max variants</em> option).</p>
             <p>The output is a <strong>surface-only pairs table</strong> — one row per
                (reference, variant) pair with the columns
-               <code>Sent_ID | Variant_ID | ML_Label | Reference_Sentence | Variant_Sentence</code>
-               and <em>no scores yet</em>. <code>ML_Label</code> is the <em>flip
+               <code>Sent_ID | Variant_ID | Ref_Index | Variant_No | ML_Label | Reference_Sentence | Variant_Sentence</code>
+               and <em>no scores yet</em>. <code>Ref_Index</code> is the sentence's
+               position in your file and <code>Variant_No</code> numbers its variants,
+               so sorting on those two gives back your file's order. <code>ML_Label</code> is the <em>flip
                signal</em> (1 = reference listed first, 0 = flipped), alternating row
                by row for a 50/50 balance — see
                <a href="#deltas">the Delta columns</a> for why.</p>

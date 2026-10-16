@@ -43,6 +43,8 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from helpers import reference_groups
+
 _WEIGHTS_PATH = Path(__file__).resolve().parent / "models" / "recommender_weights.json"
 
 _weights: Optional[Dict[str, float]] = None  # lazy; {} when the file is absent
@@ -159,15 +161,14 @@ def recommend_order(pairs_df: pd.DataFrame, names: List[str]) -> dict:
     if pairs_df.empty:
         return result
 
-    # Group rows per source sentence, preserving first-appearance order.
-    groups: Dict[str, List[dict]] = {}
-    for row in pairs_df.to_dict("records"):
-        groups.setdefault(row["Sent_ID"], []).append(row)
-
-    for sent_id, rows in groups.items():
+    # One group per reference sentence (helpers.reference_groups — keyed on
+    # Ref_Index, so a duplicated Sent_ID can't merge two references).
+    records = pairs_df.to_dict("records")
+    for _key, positions in reference_groups(pairs_df):
+        rows = [records[p] for p in positions]
         candidates, best = _rank_group(rows, specs)
         result["sentences"].append({
-            "sent_id": str(sent_id),
+            "sent_id": str(rows[0]["Sent_ID"]),
             "recommended": None if best is None else {
                 k: best[k] for k in ("id", "sentence", "is_reference", "score")
             },
@@ -226,7 +227,7 @@ def recommend_column(pairs_df: pd.DataFrame, names: List[str]) -> Optional[pd.Da
     """
     Per-row recommended word order for the scored pairs table.
 
-    Broadcasts one recommendation per source sentence (``Sent_ID``) across all
+    Broadcasts one recommendation per reference sentence across all
     of that sentence's rows — the same winner :func:`recommend_order` picks, but
     computed group-by-group keeping only the winner (never the full candidate
     lists), so it stays light on a large corpus.
@@ -251,26 +252,27 @@ def recommend_column(pairs_df: pd.DataFrame, names: List[str]) -> Optional[pd.Da
     if not specs:
         return None
 
-    # Group rows per source sentence, preserving first-appearance order.
-    groups: Dict[str, List[dict]] = {}
-    for row in pairs_df.to_dict("records"):
-        groups.setdefault(row["Sent_ID"], []).append(row)
+    # One group per reference; the winner is written back to that group's row
+    # positions, so the table's order never matters.
+    records = pairs_df.to_dict("records")
+    n = len(records)
+    sentence_col: List[object] = [None] * n
+    is_ref_col: List[object] = [None] * n
+    score_col: List[object] = [None] * n
+    for _key, positions in reference_groups(pairs_df):
+        _candidates, best = _rank_group([records[p] for p in positions], specs)
+        if best is None:
+            continue
+        for p in positions:
+            sentence_col[p] = best["sentence"]
+            is_ref_col[p] = bool(best["is_reference"])
+            score_col[p] = best["score"]
 
-    # sent_id (raw dtype, for an exact map back to df rows) -> winner triple.
-    picks: Dict[object, tuple] = {}
-    for sent_id, rows in groups.items():
-        _candidates, best = _rank_group(rows, specs)  # candidates discarded here
-        picks[sent_id] = (
-            (best["sentence"], bool(best["is_reference"]), best["score"])
-            if best is not None else (None, None, None)
-        )
-
-    sids = pairs_df["Sent_ID"]
     return pd.DataFrame(
         {
-            "Recommended_Sentence": sids.map(lambda s: picks[s][0]),
-            "Recommended_Is_Reference": sids.map(lambda s: picks[s][1]),
-            "Recommended_Score": sids.map(lambda s: picks[s][2]),
+            "Recommended_Sentence": sentence_col,
+            "Recommended_Is_Reference": is_ref_col,
+            "Recommended_Score": score_col,
         },
         index=pairs_df.index,
     )

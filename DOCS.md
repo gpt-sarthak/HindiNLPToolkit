@@ -80,7 +80,10 @@ Loads sentences from a file or a raw Hindi string.
 | Path ending in `.txt` | Each non-empty line parsed as one sentence via Stanza (Hindi). |
 | Raw Hindi string | Parsed via Stanza (Hindi). Model downloaded automatically on first use. |
 
-**Returns** `List[TokenList]` — list of `conllu` TokenList objects.
+**Returns** `List[TokenList]` — list of `conllu` TokenList objects. Each one
+carries `metadata["hnt_index"]`, its 1-based position in *source*, stamped
+**before** any filtering — it becomes the pairs table's `Ref_Index` (see
+*Reference grouping* under Helpers).
 
 **Raises**
 - `FileNotFoundError` — if a `.conllu` or `.txt` path does not exist.
@@ -130,7 +133,7 @@ in order — no logic is duplicated.
 | Name | Type | Description |
 |---|---|---|
 | `passed_list` | `List[Dict]` | Dicts with keys `sentence`, `root_id`, `constituents`. Direct input to `generate_variants()`. |
-| `rejected_df` | `DataFrame` | `Sent_ID`, `Sentence`, `Reason` — one row per rejected sentence. |
+| `rejected_df` | `DataFrame` | `Sent_ID`, `Ref_Index`, `Sentence`, `Reason` — one row per rejected sentence (`Ref_Index` = position in the submitted file; blank for sentences not loaded through `load_input`). |
 | `passed_df` | `DataFrame` | Rich feature table; see columns below. |
 
 **`passed_df` columns**
@@ -138,6 +141,7 @@ in order — no logic is duplicated.
 | Column | Description |
 |---|---|
 | `Sent_ID` | Sentence identifier from CoNLL-U metadata |
+| `Ref_Index` | Position in the submitted file — the same value as the pairs table's `Ref_Index` |
 | `Sentence` | Surface text |
 | `Root_ID` | Token ID of the verbal root |
 | `Constituent_Count` | Number of preverbal constituents |
@@ -181,7 +185,7 @@ extracts preverbal constituents and switches the type to `List[Dict]`. Filters
 
 Every individual filter raises `ValueError` on empty input and returns
 `(passed, rejected_df)` where `rejected_df` always has columns
-`Sent_ID | Sentence | Reason`.
+`Sent_ID | Ref_Index | Sentence | Reason`.
 
 ---
 
@@ -469,9 +473,18 @@ A single `pandas.DataFrame` (`pairs_df`) with exactly these columns:
 |---|---|
 | `Sent_ID` | Sentence identifier from CoNLL-U metadata |
 | `Variant_ID` | `{Sent_ID}_v{n}` |
+| `Ref_Index` | The reference's 1-based position in the submitted file (from `load_input`'s `hnt_index`; 1..n over `passed_list` when the sentences were never stamped) — **the** per-reference key |
+| `Variant_No` | `n` as an integer, 1..n within the reference |
 | `ML_Label` | Flip signal: `1` = reference-first, `0` = flipped (variant-first); balanced 50/50 |
 | `Reference_Sentence` | Reference surface text |
 | `Variant_Sentence` | Variant surface text |
+
+Sorting by `(Ref_Index, Variant_No)` reproduces the submitted file's order (rows
+are emitted that way already). Use those two integers — not `Sent_ID` /
+`Variant_ID` — to group or sort: the IDs are text (`s10` sorts before `s2`), fall
+back to `"Unknown_ID"` without metadata, and an uploaded `.conllu` may repeat
+them. Added 2026-10-04; tables written before then lack both columns, and every
+consumer falls back to `Sent_ID` for them.
 
 Feature columns (`DL_Reference`, `DL_Variant`, `Delta_DL`, `IS_*`, …) are added
 later by scorers — see the scoring section below. The web app also joins the
@@ -731,9 +744,13 @@ class MyScorer(Scorer):
 ```
 
 The web app discovers it automatically on restart. `pairs_df` is the
-`generate_variants` output (`Sent_ID | Variant_ID | ML_Label |
-Reference_Sentence | Variant_Sentence`); add columns, never drop or reorder
-rows. Emit raw `*_Reference` / `*_Variant` (true-role) scores and declare the
+`generate_variants` output (`Sent_ID | Variant_ID | Ref_Index | Variant_No |
+ML_Label | Reference_Sentence | Variant_Sentence`); add columns, never drop or
+reorder rows. To work per reference sentence, group with
+`helpers.reference_groups(pairs_df)` (keyed on `Ref_Index`) and find each row's
+parse with `helpers.reference_lookup(pairs_df, passed)` — never key on
+`Sent_ID`, which can repeat. Compute in whatever order suits you, but write
+results back by row position. Emit raw `*_Reference` / `*_Variant` (true-role) scores and declare the
 diff via `deltas()` — don't compute it yourself.
 
 Optionally declare the *direction* of your raw score so the scorer can also
@@ -807,6 +824,7 @@ from helpers import build_corpus_context, get_previous_sentences
 ctx = build_corpus_context(all_sentences)   # all_sentences from load_input()
 ctx.previous("doc_s42", n=1)                  # -> List[TokenList] (oldest first)
 ctx.previous_text("doc_s42", n=2)             # -> str (concatenated surface)
+ctx.previous("doc_s42", n=1, ref_index=42)    # by file position (Ref_Index)
 
 # One-off lookup — no index to manage:
 get_previous_sentences(all_sentences, "doc_s42", n=1)   # -> List[TokenList]
@@ -816,7 +834,32 @@ get_previous_sentences(all_sentences, "doc_s42", n=1)   # -> List[TokenList]
 for backward compatibility.) Build from the **complete** corpus in load order
 (before filtering) so a sentence dropped by the filters still counts as the
 textual predecessor of the next one. Returns `[]` at the start of the corpus or
-for an unknown `sent_id`.
+for an unknown `sent_id`. A `sent_id` alone resolves a duplicated id to its
+*first* occurrence; pass `ref_index` (the row's `Ref_Index`) and the sentence is
+found by its unique file position instead, with the `sent_id` kept as a
+cross-check.
+
+### Reference grouping (`helpers/grouping.py`)
+
+Every sentence is stamped with its position in the submitted file as it is
+loaded, and that position is the key for everything done *per reference
+sentence* — batching, caching the reference's score, one adaptation step, the
+recommendation, the word-order label:
+
+```python
+from helpers import reference_groups, reference_lookup
+
+for key, positions in reference_groups(pairs_df):   # key = Ref_Index
+    ...                                              # positions = iloc row positions
+parses = reference_lookup(pairs_df, passed)          # row -> filter-output item (or None)
+```
+
+`reference_groups` returns groups in first-appearance order with 0-based row
+positions, so a scorer can compute in any order and write back by position.
+Both helpers fall back to `Sent_ID` (plus the reference text, for grouping) on a
+table that has no `Ref_Index` column. `stamp_ref_index(sentences, start=1)`
+stamps hand-built TokenLists; the web app stamps a Sentence-mode context
+sentence at `<= 0` so it never collides with the target's `1`.
 
 ### Variant reconstruction
 

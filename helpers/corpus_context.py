@@ -27,9 +27,11 @@ dropped by the filters still counts as the textual predecessor of the next one.
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from conllu import TokenList
+
+from .grouping import ref_index_of
 
 
 def _sent_id(sentence: TokenList, fallback: str) -> str:
@@ -57,36 +59,57 @@ class CorpusContext:
 
     Notes
     -----
-    If two sentences share a ``sent_id`` the first occurrence wins for lookups;
-    the ordered backing list still holds every sentence, so ``previous`` always
-    reflects true corpus order.
+    Lookups by ``sent_id`` alone resolve a duplicated id to its *first*
+    occurrence.  Pass ``ref_index`` (the pairs table's ``Ref_Index``) as well
+    and the sentence is found by its stamped file position instead, which is
+    unique — the ``sent_id`` is then only a cross-check, so a table whose
+    ``Ref_Index`` was assigned by position (unstamped sentences) can never be
+    matched to the wrong sentence.
     """
 
     def __init__(self, sentences: List[TokenList]) -> None:
         self._sentences: List[TokenList] = list(sentences)
         self._position: Dict[str, int] = {}
+        self._by_index: Dict[int, int] = {}
         for idx, sent in enumerate(self._sentences):
             sid = _sent_id(sent, f"index_{idx}")
             # First occurrence wins — keeps lookups stable for duplicate ids.
             self._position.setdefault(sid, idx)
+            ref_index = ref_index_of(sent)
+            if ref_index is not None:
+                self._by_index.setdefault(ref_index, idx)
 
-    def previous(self, sent_id: str, n: int = 1) -> List[TokenList]:
+    def _locate(self, sent_id: str, ref_index: Optional[int]) -> Optional[int]:
+        if ref_index is not None:
+            pos = self._by_index.get(int(ref_index))
+            if pos is not None and _sent_id(self._sentences[pos], f"index_{pos}") == sent_id:
+                return pos
+        return self._position.get(sent_id)
+
+    def previous(
+        self, sent_id: str, n: int = 1, ref_index: Optional[int] = None
+    ) -> List[TokenList]:
         """
         Return up to *n* sentences immediately preceding *sent_id* in corpus
         order, oldest first.  Empty list if *sent_id* is unknown or is at the
-        start of the corpus.
+        start of the corpus.  *ref_index* disambiguates a duplicated
+        ``sent_id`` (see the class notes).
         """
         if n < 1:
             return []
-        pos = self._position.get(sent_id)
+        pos = self._locate(sent_id, ref_index)
         if pos is None:
             return []
         start = max(0, pos - n)
         return self._sentences[start:pos]
 
-    def previous_text(self, sent_id: str, n: int = 1) -> str:
+    def previous_text(
+        self, sent_id: str, n: int = 1, ref_index: Optional[int] = None
+    ) -> str:
         """Surface text of the previous *n* sentences, space-joined."""
-        return " ".join(_surface(sent) for sent in self.previous(sent_id, n))
+        return " ".join(
+            _surface(sent) for sent in self.previous(sent_id, n, ref_index)
+        )
 
     def __len__(self) -> int:
         return len(self._sentences)

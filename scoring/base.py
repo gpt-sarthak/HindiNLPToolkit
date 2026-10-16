@@ -107,9 +107,12 @@ class Scorer:
         Parameters
         ----------
         pairs_df : DataFrame from ``generate_variants()`` with columns
-                   Sent_ID | Variant_ID | ML_Label | Reference_Sentence |
-                   Variant_Sentence
+                   Sent_ID | Variant_ID | Ref_Index | Variant_No | ML_Label |
+                   Reference_Sentence | Variant_Sentence
                    (plus any columns added by scorers that ran before this one).
+                   Work per reference sentence with
+                   ``helpers.reference_groups(pairs_df)`` (keyed on
+                   ``Ref_Index``; ``Sent_ID`` can repeat).
 
         Returns
         -------

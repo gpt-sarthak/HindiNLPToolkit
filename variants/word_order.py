@@ -28,7 +28,12 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 
-from helpers import classify_word_order, constituent_deprel, recover_permutation
+from helpers import (
+    classify_word_order,
+    constituent_deprel,
+    recover_permutation,
+    reference_lookup,
+)
 
 WORD_ORDER_COLUMNS = ["Reference_Word_Order", "Variant_Word_Order"]
 
@@ -39,8 +44,9 @@ def label_word_orders(pairs_df: pd.DataFrame, passed: List[Dict]) -> pd.DataFram
 
     Parameters
     ----------
-    pairs_df : output of ``generate_variants`` (needs ``Sent_ID`` and
-               ``Variant_Sentence``; extra columns are ignored).
+    pairs_df : output of ``generate_variants`` (needs ``Ref_Index`` — or, for
+               an older table, ``Sent_ID`` — and ``Variant_Sentence``; extra
+               columns are ignored).
     passed   : the filter output the pairs were generated from — each item a
                dict with ``sentence`` / ``root_id`` / ``constituents``.
 
@@ -48,36 +54,30 @@ def label_word_orders(pairs_df: pd.DataFrame, passed: List[Dict]) -> pd.DataFram
     -------
     A DataFrame aligned to ``pairs_df.index`` with ``Reference_Word_Order`` and
     ``Variant_Word_Order`` (``'SOV'`` / ``'DOSV'`` / ``'IOSV'``), ready to
-    ``join`` onto *pairs_df*.  Rows whose ``Sent_ID`` has no parse in *passed*
-    get empty strings — never an exception.
+    ``join`` onto *pairs_df*.  Rows with no parse in *passed* get empty strings
+    — never an exception.
     """
-    # sent_id -> (constituents, deprels in reference surface order)
-    parse_by_id: Dict[str, Tuple[List[List[dict]], List[str]]] = {}
-    for item in passed:
-        sid = item["sentence"].metadata.get("sent_id", "Unknown_ID")
-        if sid in parse_by_id:
-            continue
-        consts = item["constituents"]
-        deprels = [constituent_deprel(c, item["root_id"]) for c in consts]
-        parse_by_id[sid] = (consts, deprels)
-
-    ref_label: Dict[str, str] = {}  # cache per sentence
-    ref_col: List[str] = []
-    var_col: List[str] = []
-
     if pairs_df.empty:
         return pd.DataFrame({c: [] for c in WORD_ORDER_COLUMNS}, index=pairs_df.index, dtype=object)
 
-    for sent_id, variant_sentence in zip(pairs_df["Sent_ID"], pairs_df["Variant_Sentence"]):
-        parse = parse_by_id.get(sent_id)
-        if parse is None:
+    # Per reference (keyed by the item's identity): constituents, deprels in
+    # reference surface order, and the reference's own label — computed once.
+    per_ref: Dict[int, Tuple[List[List[dict]], List[str], str]] = {}
+    ref_col: List[str] = []
+    var_col: List[str] = []
+
+    for item, variant_sentence in zip(reference_lookup(pairs_df, passed),
+                                      pairs_df["Variant_Sentence"]):
+        if item is None:
             ref_col.append("")
             var_col.append("")
             continue
-        consts, deprels = parse
-        if sent_id not in ref_label:
-            ref_label[sent_id] = classify_word_order(deprels)
-        ref_col.append(ref_label[sent_id])
+        if id(item) not in per_ref:
+            consts = item["constituents"]
+            deprels = [constituent_deprel(c, item["root_id"]) for c in consts]
+            per_ref[id(item)] = (consts, deprels, classify_word_order(deprels))
+        consts, deprels, ref_label = per_ref[id(item)]
+        ref_col.append(ref_label)
 
         perm = recover_permutation(str(variant_sentence).split(" "), consts)
         var_col.append(classify_word_order([deprels[i] for i in perm]))
