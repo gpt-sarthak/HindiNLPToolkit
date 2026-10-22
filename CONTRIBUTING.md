@@ -185,7 +185,9 @@ The `context` dict holds:
   or `corpus.previous(sent_id, n=2, ref_index=...)` for the previous sentences as
   parsed tokens. Pass the row's `Ref_Index` as `ref_index` so a repeated
   `Sent_ID` still finds the right predecessor. `n=1` for a single previous
-  sentence; returns `""`/`[]` at the corpus start.
+  sentence; returns `""`/`[]` at the corpus start and at a CoNLL-U `# newdoc`
+  (context never crosses a document boundary). The corpus is the full upload
+  *before* filtering, so a rejected sentence still counts as a predecessor.
 - `context["passed"]` — the filter output (parse / constituents).
 - `context["scheme"]` — `"ud"` or `"paninian"`.
 

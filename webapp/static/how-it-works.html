@@ -523,7 +523,8 @@
              Speakers prefer given-before-new.</p>
           <p class="meta">Deterministic heuristic over the parse (Ranjan &amp; van
              Schijndel 2024). File mode uses the preceding sentence of your
-             upload; Sentence mode uses your context box, and the scorer is
+             upload — even one the filters rejected, but never one from an
+             earlier document (<code># newdoc</code>); Sentence mode uses your context box, and the scorer is
              dropped if you leave it empty.</p>
         </div>
 
@@ -594,7 +595,8 @@
              scores the target (van Schijndel &amp; Linzen 2018). The step is
              deterministic, so the same input always gives the same scores.</p>
           <p class="meta">Adapts on the preceding sentence of your upload in File
-             mode, or your context box in Sentence mode — where the scorer is
+             mode (rejected sentences included; nothing across a
+             <code># newdoc</code>), or your context box in Sentence mode — where the scorer is
              dropped if you leave it empty.</p>
         </div>
 

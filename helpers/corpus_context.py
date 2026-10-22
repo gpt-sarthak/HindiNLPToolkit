@@ -23,6 +23,11 @@ Two ways to use it:
 
 Pass the *complete* corpus in load order (before filtering) so that a sentence
 dropped by the filters still counts as the textual predecessor of the next one.
+
+Context never crosses a document boundary: a sentence that opens a document —
+the first sentence of the corpus, or one carrying a CoNLL-U ``# newdoc`` /
+``# newdoc id = ...`` comment — has no predecessor, and ``previous(n=...)``
+stops at the start of the sentence's own document.
 """
 
 from __future__ import annotations
@@ -37,6 +42,13 @@ from .grouping import ref_index_of
 def _sent_id(sentence: TokenList, fallback: str) -> str:
     """Return a sentence's CoNLL-U ``sent_id`` metadata, or *fallback*."""
     return sentence.metadata.get("sent_id", fallback)
+
+
+def _starts_document(sentence: TokenList) -> bool:
+    """True if the sentence carries a ``# newdoc`` / ``# newdoc id = ...``
+    comment (``conllu`` stores them as the keys ``newdoc`` / ``newdoc id``)."""
+    return any(key == "newdoc" or key.startswith("newdoc ")
+               for key in sentence.metadata)
 
 
 def _surface(sentence: TokenList) -> str:
@@ -65,13 +77,21 @@ class CorpusContext:
     unique — the ``sent_id`` is then only a cross-check, so a table whose
     ``Ref_Index`` was assigned by position (unstamped sentences) can never be
     matched to the wrong sentence.
+
+    A ``# newdoc`` comment starts a new document: lookups never return a
+    sentence from an earlier document.
     """
 
     def __init__(self, sentences: List[TokenList]) -> None:
         self._sentences: List[TokenList] = list(sentences)
         self._position: Dict[str, int] = {}
         self._by_index: Dict[int, int] = {}
+        # Index of the first sentence of each sentence's document.
+        self._doc_start: List[int] = []
         for idx, sent in enumerate(self._sentences):
+            if idx == 0 or _starts_document(sent):
+                doc_start = idx
+            self._doc_start.append(doc_start)
             sid = _sent_id(sent, f"index_{idx}")
             # First occurrence wins — keeps lookups stable for duplicate ids.
             self._position.setdefault(sid, idx)
@@ -91,16 +111,17 @@ class CorpusContext:
     ) -> List[TokenList]:
         """
         Return up to *n* sentences immediately preceding *sent_id* in corpus
-        order, oldest first.  Empty list if *sent_id* is unknown or is at the
-        start of the corpus.  *ref_index* disambiguates a duplicated
-        ``sent_id`` (see the class notes).
+        order, oldest first, never reaching back past the start of its
+        document.  Empty list if *sent_id* is unknown or opens a document (or
+        the corpus).  *ref_index* disambiguates a duplicated ``sent_id`` (see
+        the class notes).
         """
         if n < 1:
             return []
         pos = self._locate(sent_id, ref_index)
         if pos is None:
             return []
-        start = max(0, pos - n)
+        start = max(self._doc_start[pos], pos - n)
         return self._sentences[start:pos]
 
     def previous_text(

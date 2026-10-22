@@ -833,8 +833,13 @@ get_previous_sentences(all_sentences, "doc_s42", n=1)   # -> List[TokenList]
 (`build_corpus_context` / `CorpusContext` are also re-exported from `scoring`
 for backward compatibility.) Build from the **complete** corpus in load order
 (before filtering) so a sentence dropped by the filters still counts as the
-textual predecessor of the next one. Returns `[]` at the start of the corpus or
-for an unknown `sent_id`. A `sent_id` alone resolves a duplicated id to its
+textual predecessor of the next one — the web app does exactly this, so in File
+mode a reference's context is the line before it in your upload even when the
+filters rejected that line. Context never crosses a document boundary: a
+sentence carrying a CoNLL-U `# newdoc` / `# newdoc id = …` comment starts a new
+document, and `previous(n=…)` stops at the start of the sentence's own document.
+Returns `[]` at the start of the corpus or of a document, or for an unknown
+`sent_id`. A `sent_id` alone resolves a duplicated id to its
 *first* occurrence; pass `ref_index` (the row's `Ref_Index`) and the sentence is
 found by its unique file position instead, with the `sent_id` kept as a
 cross-check.
