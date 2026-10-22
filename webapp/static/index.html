@@ -305,24 +305,12 @@
   .tree-msg { font-size: 0.75rem; color: var(--ink-soft); padding: 0.5rem 0.4rem; }
   .tree-msg.err { color: var(--vermilion-deep); }
 
-  /* ── dependency arc svg ── */
-  .arc-svg .arc-path { fill: none; stroke-width: 1.5; opacity: .9; }
-  .arc-svg .nsubj { stroke: var(--vermilion); fill: var(--vermilion); }
-  .arc-svg .obj, .arc-svg .iobj { stroke: #b5651d; fill: #b5651d; }
-  .arc-svg .case { stroke: #6a5acd; fill: #6a5acd; }
-  .arc-svg .obl { stroke: #7a4800; fill: #7a4800; }
-  .arc-svg .amod, .arc-svg .compound { stroke: #4a7c2f; fill: #4a7c2f; }
-  .arc-svg .root-dep { stroke: var(--vermilion-deep); fill: var(--vermilion-deep); }
-  .arc-svg .dep-other { stroke: var(--ink-soft); fill: var(--ink-soft); }
-  .arc-svg .tok-wrap { fill: #fff; stroke: var(--line); }
-  .arc-svg .tok-wrap.NOUN, .arc-svg .tok-wrap.PROPN { fill: #e6f1fb; stroke: #c7dcef; }
-  .arc-svg .tok-wrap.VERB, .arc-svg .tok-wrap.AUX { fill: #eaf3de; stroke: #cddfb6; }
-  .arc-svg .tok-wrap.ADJ { fill: #fff0d0; stroke: #ebdba8; }
-  .arc-svg .tok-wrap.ADP, .arc-svg .tok-wrap.PART { fill: #f3f0f8; stroke: #d9d2e7; }
-  .arc-svg .tok-text { font-family: "Noto Sans Devanagari", serif; font-size: 13px; fill: var(--ink); }
-  .arc-svg .tok-pos { font-family: var(--mono); font-size: 9px; fill: var(--ink-soft); font-weight: 600; letter-spacing: .04em; }
-  .arc-svg .rel-label { font-family: var(--mono); font-size: 9px; font-weight: 500; }
-  .arc-svg .arc-len { font-family: var(--mono); font-size: 8.5px; fill: var(--ink-soft); }
+  /* ── dependency tree (RUG CoNLL-U viewer style) ── */
+  .ud-tree [data-node], .ud-tree [data-edge] { cursor: pointer; }
+  /* The viewer's tooltip.css (#ttcont), over the page and the expand overlay. */
+  #ud-tt { position: fixed; display: none; z-index: 1000; max-width: 500px; margin: 5px 0;
+           padding: .5em 1em; background: #666; color: #fff; opacity: 0;
+           transition: opacity .2s; pointer-events: none; }
 
   /* ── expand overlay ── */
   .tree-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(20,18,12,.5); backdrop-filter: blur(2px); display: flex; flex-direction: column; }
@@ -1108,13 +1096,16 @@ function esc(s) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// Parse a CoNLL-U string into [{text, tokens:[{id,word,upos,head,deprel}]}].
+// Parse a CoNLL-U string into
+// [{text, tokens:[{id,idStr,word,lemma,upos,xpos,feats,head,headStr,deprel}],
+//   multis:[{id,word}]}].  Multiword-token ranges go to `multis`; empty nodes
+// (decimal ids) are skipped, as the RUG viewer does without a DEPS column.
 function parseConllu(text) {
   const out = [];
   for (const block of text.split(/\n\s*\n/)) {
     if (!block.trim()) continue;
     let sentText = "";
-    const tokens = [];
+    const tokens = [], multis = [];
     for (const line of block.split("\n")) {
       if (line.startsWith("# text")) {
         const m = line.match(/#\s*text\s*=\s*(.*)$/);
@@ -1122,66 +1113,306 @@ function parseConllu(text) {
         continue;
       }
       if (line.startsWith("#") || !line.trim()) continue;
-      const c = line.split("\t");
-      if (c.length < 8 || c[0].includes("-") || c[0].includes(".")) continue;
-      tokens.push({ id: parseInt(c[0], 10), word: c[1], upos: c[3],
-                    head: parseInt(c[6], 10), deprel: c[7] });
+      const c = line.split("\t").map(f => f.trim());
+      if (c.length < 8 || c[0].includes(".")) continue;
+      if (c[0].includes("-")) { multis.push({ id: c[0], word: c[1] }); continue; }
+      tokens.push({ id: parseInt(c[0], 10), idStr: c[0], word: c[1], lemma: c[2],
+                    upos: c[3], xpos: c[4], feats: c[5],
+                    head: parseInt(c[6], 10), headStr: c[6], deprel: c[7] });
     }
     if (tokens.length) {
       if (!sentText) sentText = tokens.map(t => t.word).join(" ");
-      out.push({ text: sentText, tokens });
+      out.push({ text: sentText, tokens, multis });
     }
   }
   return out;
 }
 
-function relClass(deprel) {
-  const base = (deprel || "").split(":")[0];
-  const map = { nsubj: "nsubj", obj: "obj", iobj: "iobj", case: "case",
-                obl: "obl", amod: "amod", compound: "compound" };
-  return map[base] || "dep-other";
+// ── Dependency tree, drawn like the RUG CoNLL-U viewer ──────────────────────
+// A port of bin/conllu2svg.go from rug-compling/conllu-viewer
+// (https://github.com/rug-compling/conllu-viewer), the program behind
+// https://urd2.let.rug.nl/~kleiweg/conllu/ — same constants, node and edge
+// geometry, level allocation, anchor rule and FreeSans width tables, so the
+// tree matches that viewer's.  Basic dependencies only (Stanza writes no DEPS).
+// Go's sort.Slice is replaced by insertion sort, which is what Go runs for up
+// to 12 elements; longer sentences can break ties between equal-length arcs
+// differently.
+//
+// Copyright (c) 2018, Peter Kleiweg
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+// 1. Redistributions of source code must retain the above copyright
+//    notice, this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright
+//    notice, this list of conditions and the following disclaimer in the
+//    documentation and/or other materials provided with the distribution.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+// IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+// TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+// PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+// TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+// LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+// NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+const UD = {
+  FONT: "FreeSans, Arial, Helvetica, sans-serif",
+  MIN_NODE_WIDTH: 80, NODE_HEIGHT: 48, NODE_SPACING: 8, NODE_FONT_SIZE: 16, NODE_TWEEK: 2,
+  LVL_HEIGHT: 40, EDGE_FONT_SIZE: 16, EDGE_FONT_OFFSET: 8, EDGE_FONT_WHITE_MARGIN: 2,
+  EDGE_LBL_BACKGROUND: "white", EDGE_LBL_OPACITY: 0.9, EDGE_DROP: 80,
+  MULTI_SKIP: 4, MULTI_HEIGHT: 28, MARGIN: 4,
+};
+
+// Glyph widths from the viewer's bin/fontsize.go (FreeSans, units of
+// FONT_BASE_SIZE), for the three blocks Hindi text uses: Latin-1, Devanagari
+// and General Punctuation (incl. ZWJ/ZWNJ).
+const UD_FONT = (() => {
+  const seg = s => s.split(",").map(Number);
+  const blocks = (latin, deva, punct) =>
+    [[0x0000, seg(latin)], [0x0900, seg(deva)], [0x2000, seg(punct)]];
+  return {
+    BASE_SIZE: 134, ASCENT: 98, DESCENT: 29,
+    regular: blocks(
+      "107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,34,45,45,75,75,119,89,27,45,45,52,78,37,45,34,37,75,75,75,75,75,75,75,75,75,75,34,34,78,78,78,75,136,89,89,95,94,85,80,103,97,37,71,90,75,113,98,105,88,105,95,89,85,96,86,126,88,91,82,37,37,37,63,75,34,73,75,68,75,71,38,74,72,30,33,69,29,109,72,72,75,75,44,66,38,72,66,97,64,64,65,45,34,45,67,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,37,45,75,75,75,75,35,75,45,107,50,67,78,45,107,45,81,78,47,47,45,75,72,34,45,47,49,67,116,116,118,75,89,89,89,89,89,89,132,95,85,85,85,85,37,37,40,40,95,98,105,105,105,105,105,78,106,96,96,96,96,91,86,80,73,73,73,73,73,73,117,68,71,71,71,71,30,30,35,35,72,72,72,72,72,72,72,78,72,72,72,72,72,64,75,64",
+      "0,0,0,41,96,96,119,62,62,78,108,123,86,58,58,58,58,119,119,119,119,100,105,70,79,91,83,86,94,93,91,76,71,82,72,81,76,88,67,79,76,76,64,98,66,77,69,75,58,58,88,89,89,66,87,64,89,65,0,30,0,59,30,30,30,0,0,0,0,0,0,0,0,30,30,30,30,0,20,30,112,0,0,0,0,0,0,0,100,105,70,94,82,72,98,75,121,84,0,0,90,90,77,77,77,77,77,77,77,77,77,77,49,52,96,96,119,119,96,96,107,94,75,76,94,77,82,66",
+      "67,134,67,134,45,34,22,75,37,22,13,0,0,0,0,0,45,45,75,67,134,134,43,76,34,34,34,34,54,54,54,54,75,75,54,54,67,67,91,37,0,0,0,0,0,0,0,22,134,182,37,63,91,37,63,91,50,34,34,83,75,75,75,88,88,59,113,54,22,45,45,149,112,112,75,72,72,72,52,37,88,52,85,67,88,105,69,115,97,97,30,97,81,30,30,0,0,0,0,0,0,107,107,107,107,107,107,107,107,107,107,107"),
+    bold: blocks(
+      "107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,37,45,64,75,75,119,97,34,45,45,52,78,34,45,34,37,75,75,75,75,75,75,75,75,75,75,34,34,78,78,78,82,131,93,94,97,97,89,85,103,100,42,77,98,83,117,101,105,91,105,97,91,86,99,89,129,90,86,81,45,37,45,78,75,34,76,83,75,83,78,46,82,81,38,38,76,36,120,82,82,83,83,53,75,45,82,73,105,74,74,68,52,38,52,67,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,107,37,45,75,75,75,75,38,75,45,99,50,75,78,45,99,45,81,78,47,47,45,82,75,37,45,40,49,75,116,116,116,82,93,93,93,93,93,93,136,97,89,89,89,89,42,42,42,42,99,101,105,105,105,105,105,78,105,99,99,99,99,86,91,82,76,76,76,76,76,76,119,75,78,78,78,78,38,38,40,40,82,82,82,82,82,82,82,78,82,82,82,82,82,74,83,74",
+      "0,0,0,41,99,99,124,68,68,83,113,129,91,63,63,63,63,124,124,124,124,106,110,75,84,103,88,92,100,98,96,81,77,87,77,87,81,94,72,85,81,81,70,104,71,83,75,80,64,64,93,94,94,71,92,70,95,70,0,36,0,65,36,36,36,0,0,0,0,0,0,0,0,36,36,36,36,0,25,36,118,0,0,0,0,0,0,0,106,110,75,100,87,77,104,80,126,89,0,0,90,90,77,77,77,77,77,77,77,77,77,77,49,52,99,99,124,119,99,99,107,100,80,81,100,82,87,71",
+      "67,134,67,134,45,34,22,75,37,22,13,0,0,0,0,0,45,45,75,75,134,134,59,75,34,34,35,34,60,60,60,60,75,75,54,54,67,67,101,37,0,0,0,0,0,0,0,22,134,183,34,57,82,34,57,82,60,45,45,83,89,82,75,88,88,59,113,54,22,45,45,164,127,127,75,72,80,80,52,45,88,52,85,76,88,106,69,115,97,97,30,97,81,30,30,0,0,0,0,0,0,107,107,107,107,107,107,107,107,107,107,107"),
+  };
+})();
+
+// conllu2svg.go textwidth(): summed glyph widths, scaled and truncated like Go's int().
+// A code point outside the inlined blocks counts as the table's missing-glyph
+// width (107), or as the base size beyond the BMP, as in Go.
+function udTextWidth(text, fontsize, bold) {
+  const blocks = bold ? UD_FONT.bold : UD_FONT.regular;
+  let w = 0;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0);
+    const block = blocks.find(([lo, sizes]) => cp >= lo && cp < lo + sizes.length);
+    w += block ? block[1][cp - block[0]] : (cp > 0xFFFF ? UD_FONT.BASE_SIZE : 107);
+  }
+  return {
+    width: Math.trunc(fontsize * w / UD_FONT.BASE_SIZE),
+    height: Math.trunc(fontsize * (UD_FONT.ASCENT + UD_FONT.DESCENT) / UD_FONT.BASE_SIZE),
+    lift: Math.trunc(fontsize * UD_FONT.ASCENT / UD_FONT.BASE_SIZE),
+  };
 }
 
-// Dependency arc diagram (adapted from the Hindi Word-Order Explorer).
-function buildArcSVG(arcs) {
-  const n = arcs.length;
-  if (!n) return '<div class="tree-msg">No parse available.</div>';
-  const spacing = 84, boxH = 26, tokenY = 152, svgH = 200;
-  const svgW = Math.max(460, n * spacing + 80);
-  const startX = (svgW - (n - 1) * spacing) / 2;
-  const xOf = {};
-  arcs.forEach((tok, i) => { xOf[tok.id] = startX + i * spacing; });
-  const arcToks = arcs.filter(t => t.head !== 0)
-    .sort((a, b) => Math.abs(b.id - b.head) - Math.abs(a.id - a.head));
-  const usedTops = {};
-  let paths = "", arrows = "", labels = "";
-  arcToks.forEach(tok => {
-    const x1 = xOf[tok.id], x2 = xOf[tok.head];
-    if (x1 == null || x2 == null) return;
-    const span = Math.abs(tok.id - tok.head);
-    let arcTop = Math.max(8, tokenY - 24 - span * 19);
-    while (usedTops[arcTop]) arcTop -= 7;
-    usedTops[arcTop] = true;
-    const midX = (x1 + x2) / 2, rc = relClass(tok.deprel);
-    const depBase = (tok.deprel || "").split(":")[0];
-    paths += `<path class="arc-path ${rc}" style="fill:none" d="M${x1} ${tokenY} C${x1} ${arcTop},${x2} ${arcTop},${x2} ${tokenY}"/>`;
-    arrows += `<polygon points="${x2},${tokenY-4} ${x2-5},${tokenY-12} ${x2+5},${tokenY-12}" class="${rc}"/>`;
-    labels += `<text x="${midX}" y="${arcTop-3}" text-anchor="middle" class="rel-label ${rc}">${esc(depBase)}</text>`;
-    labels += `<text x="${midX}" y="${arcTop+12}" text-anchor="middle" class="arc-len">${span-1}</text>`;
-  });
-  const rootTok = arcs.find(t => t.head === 0);
-  let rootMark = "";
-  if (rootTok) {
-    const rx = xOf[rootTok.id];
-    rootMark = `<line x1="${rx}" y1="0" x2="${rx}" y2="${tokenY}" stroke="#9c3713" stroke-width="1" stroke-dasharray="3 3" opacity=".35"/><text x="${rx}" y="11" text-anchor="middle" class="rel-label root-dep">ROOT</text>`;
-  }
-  let boxes = "";
-  arcs.forEach(tok => {
-    const cx = xOf[tok.id], upos = tok.upos || "", bw = 56;
-    boxes += `<rect class="tok-wrap ${esc(upos)}" x="${cx-bw/2}" y="${tokenY}" width="${bw}" height="${boxH}" rx="5"/><text x="${cx}" y="${tokenY+17}" text-anchor="middle" class="tok-text">${esc(tok.word)}</text><text x="${cx}" y="${tokenY+38}" text-anchor="middle" class="tok-pos">${esc(upos)}</text>`;
-  });
-  return `<svg class="arc-svg" viewBox="0 0 ${svgW} ${svgH}" width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg">${rootMark}${paths}${arrows}${labels}${boxes}</svg>`;
+// In-place insertion sort — Go's sort.Slice for up to 12 elements.
+function udSort(a, less) {
+  for (let i = 1; i < a.length; i++)
+    for (let j = i; j > 0 && less(a[j], a[j - 1]); j--) [a[j], a[j - 1]] = [a[j - 1], a[j]];
 }
+
+// conllu2svg.go doSentence(), basic dependencies: returns the SVG markup.
+function buildUDTreeSVG(sentence) {
+  const C = UD, items = sentence.tokens.map((t, k) => ({ ...t, end: k + 1 }));
+  if (!items.length) return '<div class="tree-msg">No parse available.</div>';
+  const positions = { "0": 0 };
+  items.forEach(it => { positions[it.idStr] = it.end; });
+
+  const deps = items.map(it => {
+    const headpos = positions[it.headStr];
+    if (headpos === undefined) throw new Error(`Unknown head position ${it.headStr}`);
+    return { end: it.end, headpos, rel: it.deprel, dist: Math.abs(it.end - headpos), lvl: 0 };
+  });
+
+  // node positions
+  let width = C.MARGIN;
+  for (const it of items) {
+    it.x1 = width;
+    const w1 = udTextWidth(it.upos + " i", C.NODE_FONT_SIZE, false).width;
+    const w2 = udTextWidth(it.word + " i", C.NODE_FONT_SIZE, false).width;
+    it.x2 = width + 24 + Math.max(C.MIN_NODE_WIDTH, w1, w2);
+    width = it.x2 + C.NODE_SPACING;
+  }
+  width += C.MARGIN - C.NODE_SPACING;
+
+  // edge levels and anchor points
+  const anchors = items.map(() => []);
+  udSort(deps, (a, b) => a.dist < b.dist);
+  const grid = items.map(() => new Array(2 * items.length).fill(false));
+  for (const dep of deps) {
+    if (dep.headpos === 0) { anchors[dep.end - 1].push({ dist: 0, level: 0 }); continue; }
+    let i1 = dep.end - 1, i2 = dep.headpos - 1;
+    if (i1 > i2) [i1, i2] = [i2, i1];
+    let lvl = 0;
+    for (;;) {
+      let ok = true;
+      for (let i = i1; i < i2; i++) if (grid[i][lvl]) { ok = false; break; }
+      if (ok) { for (let i = i1; i < i2; i++) grid[i][lvl] = true; break; }
+      lvl++;
+    }
+    dep.lvl = lvl;
+    anchors[dep.end - 1].push({ dist: dep.headpos - dep.end, level: lvl });
+    anchors[dep.headpos - 1].push({ dist: dep.end - dep.headpos, level: lvl });
+  }
+  const maxlvl = Math.max(0, ...deps.map(d => d.lvl));
+  // root dependencies sit on the top level
+  for (const dep of deps) if (dep.headpos === 0) dep.lvl = maxlvl;
+  for (const list of anchors) for (const a of list) if (a.dist === 0) a.level = maxlvl;
+  for (const list of anchors) udSort(list, (a1, a2) => {
+    if (a1.dist === 0) return a2.dist > 0;
+    if (a2.dist === 0) return a1.dist < 0;
+    if (a1.dist === a2.dist) return a1.dist < 0 ? a1.level < a2.level : a1.level > a2.level;
+    if (a1.dist < 0) return a2.dist > 0 || a1.dist >= a2.dist;
+    if (a2.dist < 0) return false;
+    return a1.dist >= a2.dist;
+  });
+  const anchor = (i1, i2, lvl) => {
+    const a = anchors[i1];
+    if (a.length === 1) return i1 < i2 ? 0.75 : 0.25;
+    let n = 0;
+    for (let i = 0; i < a.length; i++) if (a[i].dist === i2 - i1 && a[i].level === lvl) { n = i; break; }
+    return (n + 0.5) / a.length;
+  };
+
+  const top = C.MARGIN + C.EDGE_FONT_SIZE + C.EDGE_FONT_OFFSET;
+  let height = top + C.LVL_HEIGHT * (maxlvl + 1) + C.NODE_HEIGHT + C.MARGIN;
+  if (sentence.multis && sentence.multis.length) height += C.MULTI_HEIGHT + C.MULTI_SKIP;
+
+  // edges
+  let lines = "", arrows = "", whites = "", texts = "";
+  for (const dep of deps) {
+    const i1 = dep.end - 1, i2 = dep.headpos === 0 ? i1 : dep.headpos - 1;
+    const x1 = items[i1].x1 + 10 + Math.trunc((items[i1].x2 - items[i1].x1 - 20) * anchor(i1, i2, dep.lvl));
+    const x2 = items[i2].x1 + 10 + Math.trunc((items[i2].x2 - items[i2].x1 - 20) * anchor(i2, i1, dep.lvl));
+    const y1 = top + C.LVL_HEIGHT * (maxlvl + 1);
+    let y2 = top + C.LVL_HEIGHT * (maxlvl - dep.lvl);
+    const cls = `en${dep.end} en${dep.headpos} q${dep.end}q${dep.headpos}`;
+    if (dep.headpos === 0) {
+      y2 = top;
+      lines += `<path class="en${dep.end} q${dep.end}q${dep.headpos}" d="M${x1} ${y1} L${x1} ${y2}" />\n`;
+    } else {
+      const mid = Math.trunc((x1 + x2) / 2), drop = y2 + C.EDGE_DROP;
+      lines += `<path class="${cls}" d="M${x1} ${y1} L${x1} ${drop} C${x1} ${y2} ${x1} ${y2} ${mid} ${y2} C${x2} ${y2} ${x2} ${y2} ${x2} ${drop} L${x2} ${y1}" />\n`;
+    }
+    arrows += `<path class="${cls}" d="M${x1} ${y1} l3 -14 l-6 0 Z" />\n`;
+    const m = udTextWidth(dep.rel + "i", C.EDGE_FONT_SIZE, true);
+    whites += `<rect x="${Math.trunc((x1 + x2 - m.width) / 2) - C.EDGE_FONT_WHITE_MARGIN}" y="${y2 - m.lift - C.EDGE_FONT_OFFSET - C.EDGE_FONT_WHITE_MARGIN}" width="${m.width + 2 * C.EDGE_FONT_WHITE_MARGIN}" height="${m.height + 2 * C.EDGE_FONT_WHITE_MARGIN}" />\n`;
+    texts += `<text class="ln${dep.end} ln${dep.headpos} p${dep.end}p${dep.headpos}" x="${Math.trunc((x1 + x2) / 2)}" y="${y2 - C.EDGE_FONT_OFFSET}" data-edge="${dep.end},${dep.headpos}">${esc(dep.rel)}</text>\n`;
+  }
+  let svg = `<svg class="ud-tree" xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">\n`;
+  svg += `<g class="normal">\n`
+    + `<g fill="none" stroke="black" stroke-width="1">\n${lines}</g>\n`
+    + `<g fill="black" stroke-width="1" stroke="black">\n${arrows}</g>\n`
+    + `<g fill="${C.EDGE_LBL_BACKGROUND}" stroke="${C.EDGE_LBL_BACKGROUND}" stroke-width="1" opacity="${C.EDGE_LBL_OPACITY}">\n${whites}</g>\n`
+    + `<g font-family="${C.FONT}" font-size="${C.EDGE_FONT_SIZE}" text-anchor="middle">\n${texts}</g>\n`
+    + `</g>\n`;
+
+  // nodes
+  const offset = top + C.LVL_HEIGHT * (maxlvl + 1);
+  const connected = n => {          // classlbl(): "en<k>" for every node sharing an edge with n
+    const uses = new Set();
+    for (const d of deps) if (d.end === n || d.headpos === n) { uses.add(d.end); uses.add(d.headpos); }
+    return [...uses].map(u => `en${u}`).join(" ");
+  };
+  const lower = Math.trunc(udTextWidth("Xg", C.NODE_FONT_SIZE, false).lift / 2);
+  const fontAttrs = `font-family="${C.FONT}" font-size="${C.NODE_FONT_SIZE}" text-anchor="middle"`;
+  let rects = "", pos = "", words = "", hits = "";
+  items.forEach((it, i) => {
+    const cx = Math.trunc((it.x1 + it.x2) / 2), w = it.x2 - it.x1;
+    rects += `<rect class="q${i + 1} ${connected(it.end)}" x="${it.x1}" y="${offset}" width="${w}" height="${C.NODE_HEIGHT}" rx="5" ry="5" />\n`;
+    pos += `<text x="${cx}" y="${offset + C.NODE_TWEEK + C.NODE_HEIGHT / 4 + lower}">${esc(it.upos)}</text>\n`;
+    words += `<text x="${cx}" y="${offset - C.NODE_TWEEK + C.NODE_HEIGHT * 3 / 4 + lower}">${esc(it.word)}</text>\n`;
+    const feats = it.feats === "_" ? "" : it.feats.replace(/\|/g, ", ").replace(/=/g, ": ");
+    const tip = `${esc(it.idStr)}: <em>${esc(it.word)}</em><br>\n${esc(it.upos)}<br>\n${esc(feats)}<br>\nLemma: ${esc(it.lemma)}`
+      + (it.xpos === "_" ? "" : `<br>\nXpos: ${esc(it.xpos)}`);
+    hits += `<rect x="${it.x1}" y="${offset}" width="${w}" height="${C.NODE_HEIGHT}" rx="5" ry="5" data-node="${i + 1}" data-tip="${esc(tip)}" />\n`;
+  });
+  svg += `<g fill="#D0E0FF" stroke="black" stroke-width="1">\n${rects}</g>\n`
+    + `<g ${fontAttrs}>\n${pos}</g>\n`
+    + `<g ${fontAttrs} font-style="italic">\n${words}</g>\n`
+    + `<g opacity="0" stroke-width="1">\n${hits}</g>\n`;
+
+  // multiword tokens, in a row under the words
+  let boxes = "", labels = "";
+  for (const multi of sentence.multis || []) {
+    const [from, to] = multi.id.split("-");
+    const a = items.find(it => it.idStr === from), b = items.find(it => it.idStr === to);
+    if (!a || !b) continue;
+    const y = offset + C.NODE_HEIGHT + C.MULTI_SKIP;
+    boxes += `<rect x="${a.x1}" y="${y}" width="${b.x2 - a.x1}" height="${C.MULTI_HEIGHT}" rx="5" ry="5" />\n`;
+    labels += `<text x="${Math.trunc((a.x1 + b.x2) / 2)}" y="${y + C.MULTI_HEIGHT / 2 + lower}">${esc(multi.word)}</text>\n`;
+  }
+  svg += `<g fill="#D0E0FF" stroke="black" stroke-width="1">\n${boxes}</g>\n`
+    + `<g font-family="${C.FONT}" font-size="${C.NODE_FONT_SIZE}" font-style="italic" text-anchor="middle">\n${labels}</g>\n`;
+  return svg + "</svg>";
+}
+
+// The viewer's hover/click behaviour (mark/unmark, mrk/unmrk, hold/hld in
+// conllu2svg.go): hovering a word highlights its edges and neighbouring nodes
+// and shows a tooltip; hovering a label highlights that edge and its two
+// nodes; a click holds the highlight until the next click.  Delegated from the
+// tree containers, so it also works on the copy in the expand overlay.
+const udTip = document.createElement("div");
+udTip.id = "ud-tt";
+document.body.appendChild(udTip);
+document.addEventListener("mousemove", e => {
+  if (udTip.style.display !== "block") return;
+  udTip.style.top = Math.max(10, e.clientY + 24) + "px";
+  if (innerWidth > 500 && e.clientX + 500 > innerWidth) {
+    udTip.style.right = (innerWidth - e.clientX - 3 + 10) + "px"; udTip.style.left = "auto";
+  } else {
+    udTip.style.left = (e.clientX + 3 + 10) + "px"; udTip.style.right = "auto";
+  }
+});
+const udHold = { on: false, svg: null, node: null, edge: null };
+const UD_TEXT_ON = { fill: "blue", fontWeight: "bold" }, UD_TEXT_OFF = { fill: "", fontWeight: "" };
+const UD_LINE_ON = { stroke: "blue", strokeWidth: "3" }, UD_LINE_OFF = { stroke: "", strokeWidth: "" };
+const udStyle = (svg, sel, style) => svg.querySelectorAll(sel).forEach(el => Object.assign(el.style, style));
+
+function udMark(svg, i, tip) {
+  udTip.innerHTML = tip; udTip.style.display = "block"; udTip.style.opacity = ".95";
+  if (!udHold.on) { udStyle(svg, `.ln${i}`, UD_TEXT_ON); udStyle(svg, `.en${i}`, UD_LINE_ON); }
+}
+function udUnmark(svg, i) {
+  udTip.style.display = "none"; udTip.style.opacity = "0";
+  if (!udHold.on) { udStyle(svg, `.ln${i}`, UD_TEXT_OFF); udStyle(svg, `.en${i}`, UD_LINE_OFF); }
+}
+function udMrk(svg, i, j, on) {
+  if (udHold.on) return;
+  udStyle(svg, `.p${i}p${j}`, on ? UD_TEXT_ON : UD_TEXT_OFF);
+  udStyle(svg, `.q${i}q${j}, .q${i}, .q${j}`, on ? UD_LINE_ON : UD_LINE_OFF);
+}
+function udUnhold() {
+  if (!udHold.on) return;
+  udHold.on = false;
+  if (udHold.node) udUnmark(udHold.svg, udHold.node);
+  if (udHold.edge) udMrk(udHold.svg, udHold.edge[0], udHold.edge[1], false);
+  Object.assign(udHold, { svg: null, node: null, edge: null });
+}
+function udEvent(e) {
+  const el = e.target.closest && e.target.closest("[data-node], [data-edge]");
+  const svg = el && el.closest("svg.ud-tree");
+  if (!svg) return;
+  const node = el.dataset.node, edge = el.dataset.edge && el.dataset.edge.split(",");
+  if (e.type === "mouseover") node ? udMark(svg, node, el.dataset.tip) : udMrk(svg, edge[0], edge[1], true);
+  else if (e.type === "mouseout") node ? udUnmark(svg, node) : udMrk(svg, edge[0], edge[1], false);
+  else if (node) {
+    const same = udHold.on && udHold.svg === svg && udHold.node === node;
+    udUnhold();
+    if (!same) { udMark(svg, node, el.dataset.tip); Object.assign(udHold, { on: true, svg, node }); }
+  } else {
+    const same = udHold.on && udHold.svg === svg && udHold.edge && udHold.edge.join() === edge.join();
+    udUnhold();
+    if (!same) { udMrk(svg, edge[0], edge[1], true); Object.assign(udHold, { on: true, svg, edge }); }
+  }
+}
+for (const id of ["dep-tree", "tree-overlay-body"])
+  for (const type of ["mouseover", "mouseout", "click"])
+    document.getElementById(id).addEventListener(type, udEvent);
 
 // Bracketed constituency tree → SVG (adapted from taru_viewer.html; tree-only).
 function parseTree(str) {
@@ -1271,7 +1502,8 @@ async function renderTrees(jobId) {
   }
   const first = sentences[0];
 
-  try { depEl.innerHTML = buildArcSVG(first.tokens); }
+  udUnhold();
+  try { depEl.innerHTML = buildUDTreeSVG(first); }
   catch { depEl.innerHTML = '<div class="tree-msg err">Could not draw the dependency tree.</div>'; }
 
   try {
