@@ -1,14 +1,19 @@
-conllu>=3.0
-numpy>=1.24
-pandas>=2.0
-stanza>=1.7
-fastapi>=0.110
-uvicorn>=0.29
-python-multipart>=0.0.9
+# Exact pins, matching the verified local venv. With ">=" floors a fresh Docker
+# build pulled newer releases (stanza 1.15 parsed some sentences differently
+# from 1.12.2), so the image and a local run disagreed. Bump deliberately.
+conllu==6.0.0
+numpy==2.4.6
+pandas==3.0.3
+stanza==1.12.2
+fastapi==0.136.3
+uvicorn==0.49.0
+python-multipart==0.0.32
 # Model scorers (scoring/): torch for the LSTM models, nltk to unpickle the
 # trigram MLE. torch is also pulled in transitively by stanza and installed
-# CPU-only in the Dockerfile, so this adds no new install there.
-torch>=2.0
-nltk>=3.8
+# CPU-only in the Dockerfile (same version as here), so this adds no new install there.
+torch==2.12.0
+nltk==3.9.4
 # Evaluation (evaluation/): pairwise ranking accuracy over scorer deltas.
-scikit-learn>=1.3
+scikit-learn==1.9.0
+# Test-only: FastAPI's TestClient (test_all.py section 6) needs httpx.
+httpx==0.28.1

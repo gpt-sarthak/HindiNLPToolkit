@@ -28,9 +28,10 @@ WORKDIR /app
 # dependency is already satisfied and pip does not pull the multi-GB NVIDIA
 # CUDA stack (cuBLAS/cuDNN/cuFFT/...). This container has no GPU; CPU torch
 # keeps the image ~10 GB smaller.
-COPY requirements.txt ./
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir -r requirements.txt
+# constraints.txt pins every transitive dependency to the verified local venv.
+COPY requirements.txt constraints.txt ./
+RUN pip install --no-cache-dir torch==2.12.0 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 # --- pre-bake the Stanza Hindi model into the image ---
 # Otherwise stanza.download('hi') runs on the first .txt/Sentence-mode parse
