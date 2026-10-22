@@ -47,7 +47,7 @@ def _sentence_surprisal(sentence: str) -> float:
 
 class SurprisalScorer(Scorer):
     name = "surprisal"
-    display_name = "PCFG Modelblocks Incremental Surprisal"
+    display_name = "Modelblocks Incremental Surprisal"
     description = ("Word-by-word processing difficulty of each word order, "
                    "from an incremental constituency parse.\n"
                    "Feature in CSV: Delta_Surprisal.")
